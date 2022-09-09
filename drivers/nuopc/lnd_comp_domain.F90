@@ -27,7 +27,7 @@ module lnd_comp_domain
 
   use lnd_comp_kind  , only : r8 => shr_kind_r8 
   use lnd_comp_kind  , only : cl => shr_kind_cl
-  use lnd_comp_types , only : noahmp_type
+  use lnd_comp_types , only : noahmp_type, field_type
   use lnd_comp_shr   , only : chkerr
   use lnd_comp_io    , only : read_tiled_file
 
@@ -61,12 +61,13 @@ contains
 
     ! input/output variables
     type(ESMF_GridComp), intent(in)  :: gcomp
-    type(noahmp_type), intent(inout) :: noahmp
+    type(noahmp_type), target, intent(inout) :: noahmp
     integer, intent(out)             :: rc
 
     ! local variables
     integer                          :: n, numOwnedElements, spatialDim, rank
     integer                          :: decomptile(2,6)
+    type(field_type)                 :: flds(2)
     real(r8), allocatable            :: ownedElemCoords(:)
     real(ESMF_KIND_R8), pointer      :: ptr1d(:)
     real(ESMF_KIND_R8), pointer      :: ptr2d(:,:)
@@ -202,38 +203,74 @@ contains
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     ! ---------------------
-    ! Get fraction from orography file 
+    ! Query cell area 
     ! ---------------------
 
-    ! input file name, the tile will be added to it based on the active PET
-    filename = trim(noahmp%nmlist%input_dir)//'oro_data.tile'
+    ! create field in R8 type
+    farea = ESMF_FieldCreate(noahmp%domain%mesh, ESMF_TYPEKIND_R8, &
+      meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
 
-    ! read data to ESMF field
-    call read_tiled_file(filename, 'land_frac', noahmp, field, numrec=1, rc=rc)
+    ! get cell area to the field
+    call ESMF_FieldRegridGetArea(farea, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    ! get pointer
-    call ESMF_FieldGet(field, localDe=0, farrayPtr=ptr3d, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    noahmp%domain%begl = lbound(ptr3d, dim=1)
-    noahmp%domain%endl = ubound(ptr3d, dim=1)
+    ! retrieve pointer and fill area array
+    call ESMF_FieldGet(farea, farrayPtr=ptr1d, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    noahmp%domain%garea(:) = ptr1d(:)
+    noahmp%domain%begl = lbound(ptr1d, dim=1)
+    noahmp%domain%endl = ubound(ptr1d, dim=1)
     noahmp%static%im = noahmp%domain%endl-noahmp%domain%begl+1
 
-    ! allocate variable and fill it
+    ! allocate data
+    if (.not. allocated(noahmp%domain%garea)) then
+       allocate(noahmp%domain%garea(noahmp%domain%begl:noahmp%domain%endl))
+    end if
+
+    ! make unit conversion from square radians to square meters if it is required
+    call ESMF_MeshGet(noahmp%domain%mesh, coordSys=coordSys, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    if (coordSys /= ESMF_COORDSYS_CART) then
+       noahmp%domain%garea(:) = noahmp%domain%garea(:)*(con_rerth**2)
+    end if
+
+    print*, "noahmp%domain%begl = ", noahmp%domain%begl
+    print*, "noahmp%domain%endl = ", noahmp%domain%endl
+    print*, "noahmp%static%im   = ", noahmp%static%im
+
+    ! ---------------------
+    ! Read required variables from orography file
+    ! ---------------------
+
+    ! allocate data
     if (.not. allocated(noahmp%domain%frac)) then
        allocate(noahmp%domain%frac(noahmp%domain%begl:noahmp%domain%endl))
+       noahmp%domain%frac(:) = 0.0_r8
     end if
-    noahmp%domain%frac(:) = ptr3d(:,1,1)
-    nullify(ptr3d)
+    if (.not. allocated(noahmp%domain%hgt)) then
+       allocate(noahmp%domain%hgt(noahmp%domain%begl:noahmp%domain%endl))
+       noahmp%domain%hgt(:) = 0.0_r8
+    end if
+
+    ! set file name and data structures
+    filename = trim(noahmp%nmlist%input_dir)//'oro_data.tile#.nc'
+    flds(1)%short_name = 'land_frac'; flds(1)%ptr1r8 => noahmp%domain%frac
+    flds(2)%short_name = 'orog_raw '; flds(2)%ptr1r8 => noahmp%domain%hgt
+
+    ! read fields
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     ! ---------------------
     ! Calculate mask from land-sea fraction
     ! ---------------------
 
+    ! allocate data
     if (.not. allocated(noahmp%domain%mask)) then
        allocate(noahmp%domain%mask(noahmp%domain%begl:noahmp%domain%endl))
     end if
 
+    ! create mask
     where (noahmp%domain%frac(:) > 0.0_r8)
        noahmp%domain%mask(:)  = 1.0_r8
     elsewhere
@@ -248,54 +285,6 @@ contains
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
     ! ---------------------
-    ! Get height from orography file
-    ! ---------------------
-
-    ! read data to ESMF field
-    call read_tiled_file(filename, 'orog_raw', noahmp, field, numrec=1, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-    ! get pointer
-    call ESMF_FieldGet(field, localDe=0, farrayPtr=ptr3d, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-    ! allocate variable
-    if (.not. allocated(noahmp%domain%hgt)) then
-       allocate(noahmp%domain%hgt(noahmp%domain%begl:noahmp%domain%endl))
-    end if
-    noahmp%domain%hgt(:) = ptr3d(:,1,1)
-
-    ! clean memory
-    nullify(ptr3d)
-
-    ! ---------------------
-    ! Query cell area 
-    ! ---------------------
-
-    ! create field in R8 type
-    farea = ESMF_FieldCreate(noahmp%domain%mesh, ESMF_TYPEKIND_R8, &
-      meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
-
-    ! get cell area to the field
-    call ESMF_FieldRegridGetArea(farea, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    if (.not. allocated(noahmp%domain%garea)) then
-       allocate(noahmp%domain%garea(noahmp%domain%begl:noahmp%domain%endl))
-    end if
-
-    ! retrieve pointer and fill area array
-    call ESMF_FieldGet(farea, farrayPtr=ptr1d, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    noahmp%domain%garea(:) = ptr1d(:)
-
-    ! make unit conversion from square radians to square meters if it is required
-    call ESMF_MeshGet(noahmp%domain%mesh, coordSys=coordSys, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    if (coordSys /= ESMF_COORDSYS_CART) then
-       noahmp%domain%garea(:) = noahmp%domain%garea(:)*(con_rerth**2)
-    end if
-
-    ! ---------------------
     ! Query coordiates from ESMF mesh
     ! ---------------------
 
@@ -304,7 +293,7 @@ contains
       numOwnedElements=numOwnedElements, rc=rc)
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
-    ! obtain mesh longitudes and latitudes
+    ! allocate data
     if (.not. allocated(noahmp%domain%lats)) then
        allocate(noahmp%domain%lats(numOwnedElements))
     end if
@@ -314,6 +303,8 @@ contains
     if (.not. allocated(ownedElemCoords)) then
        allocate(ownedElemCoords(spatialDim*numOwnedElements))
     end if
+
+    ! obtain mesh longitudes and latitudes
     call ESMF_MeshGet(noahmp%domain%mesh, ownedElemCoords=ownedElemCoords)
     if (chkerr(rc,__LINE__,u_FILE_u)) return
     do n = 1,numOwnedElements
@@ -326,8 +317,6 @@ contains
     ! Clean memory
     ! ---------------------
 
-    call ESMF_FieldDestroy(field, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call ESMF_FieldDestroy(farea, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 

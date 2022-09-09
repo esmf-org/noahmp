@@ -279,6 +279,15 @@ module lnd_comp_types
 
   end type noahmp_type
 
+  type field_type
+     real(kind=kp), pointer :: ptr1r8(:)             ! data pointer for 2d r8
+     character(len=128)      :: short_name = ""       ! short name
+     character(len=128)      :: units = ""            ! unit
+     character(len=128)      :: long_name = ""        ! long name
+     character(len=128)      :: zaxis = ""            ! name of z axis
+     integer                :: nlev                  ! number of layers for 3d fields
+  end type field_type
+
 contains
 
   subroutine Initialize(this, begl, endl, km, lsnowl)

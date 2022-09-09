@@ -57,7 +57,7 @@ module lnd_comp_nuopc
   !--------------------------------------------------------------------------
 
   integer           :: dbug = 2
-  type(noahmp_type) :: noahmp
+  type(noahmp_type), target :: noahmp
 
   character(*),parameter :: modName =  "(lnd_comp_nuopc)"
 
