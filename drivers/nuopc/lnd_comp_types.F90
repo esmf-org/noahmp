@@ -2,6 +2,9 @@ module lnd_comp_types
 
   use ESMF           , only : ESMF_Grid, ESMF_Mesh, ESMF_RouteHandle
   use machine        , only : kp => kind_phys
+  use lnd_comp_kind  , only : r8 => shr_kind_r8
+  use lnd_comp_kind  , only : r4 => shr_kind_r4
+  use lnd_comp_kind  , only : i4 => shr_kind_i4
   use mpp_domains_mod, only : domain2d
 
   !----------------------------------------------------------------------------
@@ -280,12 +283,14 @@ module lnd_comp_types
   end type noahmp_type
 
   type field_type
-     real(kind=kp), pointer :: ptr1r8(:)             ! data pointer for 2d r8
-     character(len=128)      :: short_name = ""       ! short name
-     character(len=128)      :: units = ""            ! unit
-     character(len=128)      :: long_name = ""        ! long name
-     character(len=128)      :: zaxis = ""            ! name of z axis
-     integer                :: nlev                  ! number of layers for 3d fields
+     real(r4), pointer  :: ptr1r4(:)             ! data pointer for 1d r4
+     real(r8), pointer  :: ptr1r8(:)             ! data pointer for 1d r8
+     real(i4), pointer  :: ptr1i4(:)             ! data pointer for 1d i4
+     character(len=128) :: short_name = ""       ! short name
+     character(len=128) :: units = ""            ! unit
+     character(len=128) :: long_name = ""        ! long name
+     character(len=128) :: zaxis = ""            ! name of z axis
+     integer            :: nlev                  ! number of layers for 3d fields
   end type field_type
 
 contains

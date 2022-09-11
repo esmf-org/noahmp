@@ -7,7 +7,7 @@ module lnd_comp_io
   use ESMF          , only : ESMF_FieldBundleGet, ESMF_FieldBundleRead, ESMF_FieldBundleWrite
   use ESMF          , only : ESMF_FieldBundleRemove, ESMF_FieldBundleDestroy
   use ESMF          , only : ESMF_FieldBundleRedistStore, ESMF_FieldBundleRedist
-  use ESMF          , only : ESMF_RouteHandleIsCreated
+  use ESMF          , only : ESMF_RouteHandleDestroy, ESMF_RouteHandle
   use ESMF          , only : ESMF_Field, ESMF_FieldCreate, ESMF_FieldGet, ESMF_FieldWriteVTK
   use ESMF          , only : ESMF_ArraySpec, ESMF_ArraySpecSet
   use ESMF          , only : ESMF_LogWrite, ESMF_FieldStatus_Flag, ESMF_GeomType_Flag
@@ -21,6 +21,7 @@ module lnd_comp_io
 
   use lnd_comp_types, only : noahmp_type, field_type
   use lnd_comp_kind , only : cl => shr_kind_cl
+  use lnd_comp_kind , only : r4 => shr_kind_r4
   use lnd_comp_kind , only : r8 => shr_kind_r8
   use lnd_comp_kind , only : i4 => shr_kind_i4
   use lnd_comp_shr  , only : chkerr
@@ -39,6 +40,7 @@ module lnd_comp_io
   !-----------------------------------------------------------------------------
 
   integer, parameter           :: dbug = 1
+  integer, parameter           :: iswater = 17
   character(len=1024)          :: msgString
   character(*), parameter      :: modName = "(lnd_comp_io)"
   character(len=*) , parameter :: u_FILE_u = __FILE__
@@ -117,43 +119,171 @@ contains
   subroutine read_restart(noahmp, rc)
 
     ! input/output variables
-    type(noahmp_type), intent(inout) :: noahmp
-    integer          , intent(inout) :: rc
+    type(noahmp_type), target, intent(inout) :: noahmp
+    integer,                   intent(inout) :: rc
 
     ! local variables
-    integer                          :: nt
+    type(field_type), allocatable    :: flds(:)
     character(len=cl)                :: filename
-    real(ESMF_KIND_R8), pointer      :: ptr(:,:,:)
-    type(ESMF_Field)                 :: field
     character(len=*), parameter      :: subname=trim(modName)//':(read_restart) '
     !---------------------------------------------------------------------------
 
+    ! input file name
+    filename = trim(noahmp%nmlist%restart_dir)//trim(noahmp%nmlist%restart_file)
+    call ESMF_LogWrite(subname//' called for '//trim(filename), ESMF_LOGMSG_INFO)
+
+    ! create field list
+    allocate(flds(126))
+
+
   end subroutine read_restart
 
-  !===============================================================================
   !=============================================================================
 
   subroutine read_static(noahmp, rc)
 
     ! input/output variables
-    type(noahmp_type), intent(inout) :: noahmp
-    integer          , intent(inout) :: rc
+    type(noahmp_type), target, intent(inout) :: noahmp
+    integer,                   intent(inout) :: rc
+
+    ! local variables
+    type(field_type), allocatable :: flds(:)
+    real(r4), target, allocatable :: tmpr4(:)
+    character(len=cl)             :: filename
+    character(len=*), parameter   :: subname=trim(modName)//':(read_static) '
+    !---------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite(trim(subname)//' called', ESMF_LOGMSG_INFO)
+
+    !----------------------
+    ! allocate teemporary data structures
+    !----------------------
+
+    if (.not. allocated(flds)) allocate(flds(1))
+
+    if (.not. allocated(tmpr4)) allocate(tmpr4(noahmp%domain%begl:noahmp%domain%endl))
+    tmpr4 = 0.0
+
+    !----------------------
+    ! Set data sources
+    !----------------------
+
+    noahmp%static%isot = 1
+    noahmp%static%ivegsrc = 1
+
+    !----------------------
+    ! Read latitude
+    !----------------------
+
+    filename = trim(noahmp%nmlist%input_dir)//'oro_data.tile#.nc'
+    flds(1)%short_name = 'geolat'; flds(1)%ptr1r8 => noahmp%model%xlatin
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Read soil type
+    !----------------------
+
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.soil_type.tile#.nc'
+    flds(1)%short_name = 'soil_type'; flds(1)%ptr1r4 => tmpr4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    noahmp%model%soiltyp = int(tmpr4)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Read vegetation type
+    !----------------------
+
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.vegetation_type.tile#.nc'
+    flds(1)%short_name = 'vegetation_type'; flds(1)%ptr1r4 => tmpr4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    noahmp%model%vegtype = int(tmpr4)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Read slope type
+    !----------------------
+
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.slope_type.tile#.nc'
+    flds(1)%short_name = 'slope_type'; flds(1)%ptr1r4 => tmpr4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    noahmp%model%slopetyp = int(tmpr4)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Read deep soil temperature
+    !----------------------
+
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.substrate_temperature.tile#.nc'
+    flds(1)%short_name = 'substrate_temperature'; flds(1)%ptr1r4 => tmpr4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    noahmp%model%tg3 = dble(tmpr4)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Set emissivity
+    !----------------------
+
+    ! TODO: this needs to be option in nems.configure
+    noahmp%model%emiss(:) = 0.95
+
+    !----------------------
+    ! Set albedo
+    !----------------------
+
+    ! TODO: this needs to be option in nems.configure
+    noahmp%model%alb_monthly(:,:) = 0.25
+
+    !----------------------
+    ! Read maximum snow albedo
+    !----------------------
+
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.maximum_snow_albedo.tile#.nc'
+    flds(1)%short_name = 'maximum_snow_albedo'; flds(1)%ptr1r4 => tmpr4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    noahmp%model%snoalb = dble(tmpr4)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Read vegetation greenness, monthly average, 12 months
+    !----------------------
+
+    !write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.vegetation_greenness.tile#.nc'
+    !flds(1)%short_name = 'vegetation_greenness'; flds(1)%ptr1r4 => tmpr4
+    !call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !noahmp%model%gvf_monthly = dble(tmpr4)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !noahmp%model%gvf_monthly(:,:) = ptr(:,1,:)
+    !noahmp%model%shdmin(:) = minval(ptr(:,1,:), dim=2)
+    !noahmp%model%shdmax(:) = maxval(ptr(:,1,:), dim=2)
+
+    !----------------------
+    ! Set dry
+    !----------------------
+
+    noahmp%model%dry(:) = .false.
+    where(noahmp%model%vegtype(:) /= iswater) noahmp%model%dry(:) = .true.
+
+    call ESMF_LogWrite(trim(subname)//' done', ESMF_LOGMSG_INFO)
 
   end subroutine read_static
 
-  !===============================================================================
   !=============================================================================
 
-  subroutine read_tiled_file(noahmp, filename, flds, rc)
+  subroutine read_tiled_file(noahmp, filename, flds, rh, rc)
 
     ! input/output variables
     type(noahmp_type), intent(inout) :: noahmp
     character(len=*),  intent(in)    :: filename
     type(field_type),  intent(in)    :: flds(:)
-    integer,           intent(inout) :: rc
+    type(ESMF_RouteHandle), optional, intent(in) :: rh
+    integer, optional, intent(inout) :: rc
 
     ! local variables
     integer                     :: i
+    type(ESMF_RouteHandle)      :: rh_local
     type(ESMF_FieldBundle)      :: FBgrid, FBmesh
     type(ESMF_ArraySpec)        :: arraySpecR8
     type(ESMF_Field)            :: fgrid, fmesh
@@ -161,7 +291,7 @@ contains
     !-------------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
-    call ESMF_LogWrite(subname//' called for '//trim(filename), ESMF_LOGMSG_INFO)
+    call ESMF_LogWrite(trim(subname)//' called for '//trim(filename), ESMF_LOGMSG_INFO)
 
     !----------------------
     ! Create field bundles
@@ -211,11 +341,13 @@ contains
     if (ChkErr(rc,__LINE__,u_FILE_u)) return     
 
     !----------------------
-    ! Create routehandle to transfer data from grid to mesh
+    ! Create routehandle if it is not provided to transfer data from grid to mesh
     !----------------------
 
-    if (.not. ESMF_RouteHandleIsCreated(noahmp%domain%rh_grid2mesh, rc=rc)) then
-       call ESMF_FieldBundleRedistStore(FBgrid, FBmesh, routehandle=noahmp%domain%rh_grid2mesh, rc=rc)
+    if (present(rh)) then
+       rh_local = rh
+    else
+       call ESMF_FieldBundleRedistStore(FBgrid, FBmesh, routehandle=rh_local, rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
 
@@ -223,7 +355,7 @@ contains
     ! Move data from ESMF grid to mesh
     !----------------------
 
-    call ESMF_FieldBundleRedist(FBgrid, FBmesh, noahmp%domain%rh_grid2mesh, rc=rc)
+    call ESMF_FieldBundleRedist(FBgrid, FBmesh, rh_local, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     call FB_diagnose(FBmesh, trim(subname), rc)
@@ -265,11 +397,14 @@ contains
     call ESMF_FieldBundleDestroy(FBmesh, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
+    if (.not. present(rh)) then
+       call ESMF_RouteHandleDestroy(rh_local, rc=rc)
+    end if
+
+    call ESMF_LogWrite(trim(subname)//' done', ESMF_LOGMSG_INFO)
 
   end subroutine read_tiled_file
 
-  !===============================================================================
   !=============================================================================
 
   subroutine write_mosaic_output(filename, noahmp, now_time, rc)
@@ -282,7 +417,7 @@ contains
 
   end subroutine write_mosaic_output
 
-  !===============================================================================
+  !=============================================================================
 
   subroutine FB_diagnose(FB, string, rc)
 
@@ -300,7 +435,7 @@ contains
     real(R8), pointer               :: dataPtr2d(:,:)
     type(ESMF_Field)                :: lfield
     character(len=*), parameter     :: subname='(FB_diagnose)'
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
 
     call ESMF_LogWrite(trim(subname)//": called", ESMF_LOGMSG_INFO)
     rc = ESMF_SUCCESS

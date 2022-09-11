@@ -234,10 +234,6 @@ contains
        noahmp%domain%garea(:) = noahmp%domain%garea(:)*(con_rerth**2)
     end if
 
-    print*, "noahmp%domain%begl = ", noahmp%domain%begl
-    print*, "noahmp%domain%endl = ", noahmp%domain%endl
-    print*, "noahmp%static%im   = ", noahmp%static%im
-
     ! ---------------------
     ! Read required variables from orography file
     ! ---------------------
