@@ -13,6 +13,7 @@ module lnd_comp_io
   use ESMF          , only : ESMF_LogWrite, ESMF_FieldStatus_Flag, ESMF_GeomType_Flag
   use ESMF          , only : ESMF_Mesh, ESMF_MeshGet
   use ESMF          , only : ESMF_KIND_R8, ESMF_TYPEKIND_R8
+  use ESMF          , only : ESMF_KIND_R4, ESMF_TYPEKIND_R4
   use ESMF          , only : ESMF_STAGGERLOC_CENTER, ESMF_MESHLOC_ELEMENT
   use ESMF          , only : ESMF_INDEX_DELOCAL, ESMF_INDEX_GLOBAL
   use ESMF          , only : ESMF_MAXSTR, ESMF_SUCCESS, ESMF_FAILURE
@@ -285,7 +286,7 @@ contains
     integer                     :: i
     type(ESMF_RouteHandle)      :: rh_local
     type(ESMF_FieldBundle)      :: FBgrid, FBmesh
-    type(ESMF_ArraySpec)        :: arraySpecR8
+    type(ESMF_ArraySpec)        :: arraySpecR4, arraySpecR8
     type(ESMF_Field)            :: fgrid, fmesh
     character(len=*), parameter :: subname = trim(modName)//': (read_tiled_file) '
     !-------------------------------------------------------------------------------
@@ -310,19 +311,35 @@ contains
     !----------------------
 
     do i = 1, size(flds)
-       ! set field type
-       call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       if (associated(flds(i)%ptr1r8)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-       ! create field on grid
-       fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR8, staggerloc=ESMF_STAGGERLOC_CENTER, &
-         indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), rc=rc)
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR8, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-       ! create field on mesh
-       fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr1r8, meshloc=ESMF_MESHLOC_ELEMENT, &
-         name=trim(flds(i)%short_name), rc=rc)
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr1r8, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(flds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       else if (associated(flds(i)%ptr1r4)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecR4, typekind=ESMF_TYPEKIND_R4, rank=2, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR4, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr1r4, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(flds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       end if
 
        ! add it to the field bundle on grid
        call ESMF_FieldBundleAdd(FBgrid, [fgrid], rc=rc)
