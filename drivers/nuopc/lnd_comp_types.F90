@@ -285,12 +285,15 @@ module lnd_comp_types
   type field_type
      real(r4), pointer  :: ptr1r4(:)             ! data pointer for 1d r4
      real(r8), pointer  :: ptr1r8(:)             ! data pointer for 1d r8
-     real(i4), pointer  :: ptr1i4(:)             ! data pointer for 1d i4
-     character(len=128) :: short_name = ""       ! short name
-     character(len=128) :: units = ""            ! unit
-     character(len=128) :: long_name = ""        ! long name
-     character(len=128) :: zaxis = ""            ! name of z axis
-     integer            :: nlev                  ! number of layers for 3d fields
+     integer , pointer  :: ptr1i4(:)             ! data pointer for 1d i4
+     real(r4), pointer  :: ptr2r4(:,:)           ! data pointer for 2d r4
+     real(r8), pointer  :: ptr2r8(:,:)           ! data pointer for 2d r8
+     integer , pointer  :: ptr2i4(:,:)           ! data pointer for 2d i4
+     character(len=128) :: short_name = ""       ! variable short name
+     character(len=128) :: units = ""            ! variable unit
+     character(len=128) :: long_name = ""        ! variable long name
+     character(len=128) :: zaxis = ""            ! name of z-axis
+     integer            :: nlev                  ! number of layers in z-axis
   end type field_type
 
 contains

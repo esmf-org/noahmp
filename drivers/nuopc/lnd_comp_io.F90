@@ -14,11 +14,14 @@ module lnd_comp_io
   use ESMF          , only : ESMF_Mesh, ESMF_MeshGet
   use ESMF          , only : ESMF_KIND_R8, ESMF_TYPEKIND_R8
   use ESMF          , only : ESMF_KIND_R4, ESMF_TYPEKIND_R4
+  use ESMF          , only : ESMF_KIND_I4, ESMF_TYPEKIND_I4
   use ESMF          , only : ESMF_STAGGERLOC_CENTER, ESMF_MESHLOC_ELEMENT
   use ESMF          , only : ESMF_INDEX_DELOCAL, ESMF_INDEX_GLOBAL
   use ESMF          , only : ESMF_MAXSTR, ESMF_SUCCESS, ESMF_FAILURE
   use ESMF          , only : ESMF_LOGMSG_ERROR, ESMF_LOGMSG_INFO
   use ESMF          , only : ESMF_GEOMTYPE_MESH, ESMF_GEOMTYPE_GRID, ESMF_FIELDSTATUS_COMPLETE
+  use ESMF          , only : ESMF_AttributeAdd, ESMF_AttributeSet
+  use ESMF          , only : ESMF_TypeKind_Flag
 
   use lnd_comp_types, only : noahmp_type, field_type
   use lnd_comp_kind , only : cl => shr_kind_cl
@@ -40,8 +43,11 @@ module lnd_comp_io
   ! Private module data
   !-----------------------------------------------------------------------------
 
-  integer, parameter           :: dbug = 1
+  integer, parameter           :: dbug = 0
   integer, parameter           :: iswater = 17
+  integer, parameter           :: max_num_variables = 200
+  integer                      :: max_indx = 0
+  type(field_type)             :: outflds(max_num_variables)
   character(len=1024)          :: msgString
   character(*), parameter      :: modName = "(lnd_comp_io)"
   character(len=*) , parameter :: u_FILE_u = __FILE__
@@ -428,11 +434,455 @@ contains
 
     ! input/output variables
     character(len=*)  , intent(in)    :: filename
-    type(noahmp_type) , intent(inout) :: noahmp
+    type(noahmp_type) , target, intent(inout) :: noahmp
     real(ESMF_KIND_R8), intent(in)    :: now_time
     integer           , intent(inout) :: rc
 
+    ! local variables
+    integer                     :: i, rank
+    real(r4), pointer           :: ptr2r4(:,:)
+    real(r8), pointer           :: ptr2r8(:,:)
+    integer , pointer           :: ptr2i4(:,:), ptrMask(:,:)
+    type(ESMF_RouteHandle)      :: rh_local
+    type(ESMF_FieldBundle)      :: FBgrid, FBmesh
+    type(ESMF_ArraySpec)        :: arraySpecI4, arraySpecR4, arraySpecR8
+    type(ESMF_Field)            :: fgrid, fmesh
+    type(ESMF_TypeKind_Flag)    :: typekind
+    character(len=*), parameter :: subname = trim(modName)//': (write_mosaic_output) '
+    !-------------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite(trim(subname)//' called for '//trim(filename), ESMF_LOGMSG_INFO)
+
+    !----------------------
+    ! Create field bundles
+    !----------------------
+
+    ! create empty field bundle on grid
+    FBgrid = ESMF_FieldBundleCreate(name="fields_on_grid", rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! create empty field bundle on mesh
+    FBmesh = ESMF_FieldBundleCreate(name="fields_on_mesh", rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Add metadata to grid
+    !----------------------
+
+    call ESMF_AttributeAdd(noahmp%domain%grid, convention="NetCDF", purpose="NOAHMP", attrList=(/"ESMF:gridded_dim_labels"/), rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call ESMF_AttributeSet(noahmp%domain%grid, convention="NetCDF", purpose="NOAHMP", name="ESMF:gridded_dim_labels", valueList=(/"grid_xt", "grid_yt"/), rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Prepare data structure to write the data 
+    !----------------------
+
+    call fld_add("ps"        , "surface pressure"                                                  , "Pa"     , ptr1r8=noahmp%forc%ps)
+    call fld_add("u1"        , "u-component of wind"                                               , "m/s"    , ptr1r8=noahmp%model%u1)
+    call fld_add("v1"        , "v-component of wind"                                               , "m/s"    , ptr1r8=noahmp%model%v1)
+    call fld_add("t1"        , "forcing air temperature"                                           , "K"      , ptr1r8=noahmp%forc%t1)
+    call fld_add("q1"        , "forcing specific humidity"                                         , "kg/kg"  , ptr1r8=noahmp%forc%q1)
+    call fld_add("soiltyp"   , "soil type"                                                         , "1"      , ptr1i4=noahmp%model%soiltyp)
+    call fld_add("vegtype"   , "vegetation type"                                                   , "1"      , ptr1i4=noahmp%model%vegtype)
+    call fld_add("sigmaf"    , "green vegetation fraction"                                         , "1"      , ptr1r8=noahmp%model%sigmaf) 
+    call fld_add("dlwflx"    , "forcing longwave downward flux"                                    , "W/m2"   , ptr1r8=noahmp%forc%dlwflx)
+    call fld_add("dswsfc"    , "forcing shortwave downward flux"                                   , "W/m2"   , ptr1r8=noahmp%forc%dswsfc)
+    call fld_add("snet"      , "forcing net shortwave flux"                                        , "W/m2"   , ptr1r8=noahmp%model%snet) 
+    call fld_add("tg3"       , "deep soil temperature"                                             , "K"      , ptr1r8=noahmp%model%tg3)
+    call fld_add("cm"        , "surface exchange coeff for momentum"                               , "m/s"    , ptr1r8=noahmp%model%cm)
+    call fld_add("ch"        , "surface exchange coeff for heat and moisture"                      , "m/s"    , ptr1r8=noahmp%model%ch) 
+    call fld_add("prsl1"     , "mean pressure at lowest model layer"                               , "Pa"     , ptr1r8=noahmp%model%prsl1)
+    call fld_add("prslk1"    , "dimensionless Exner function at the lowest model layer"            , "1"      , ptr1r8=noahmp%model%prslk1)
+    call fld_add("prslki"    , "Exner function ratio bt midlayer and interface at 1st layer"       , "1"      , ptr1r8=noahmp%model%prslki)
+    call fld_add("prsik1"    , "dimensionless Exner function at the ground surface"                , "1"      , ptr1r8=noahmp%model%prsik1)
+    call fld_add("zf"        , "height of bottom layer"                                            , "m"      , ptr1r8=noahmp%model%zf)
+    call fld_add("mask"      , "land-sea mask"                                                     , "1"      , ptr1i4=noahmp%domain%mask)
+    call fld_add("wind"      , "wind speed"                                                        , "m/s"    , ptr1r8=noahmp%forc%wind)
+    call fld_add("slopetyp"  , "class of sfc slope"                                                , "1"      , ptr1i4=noahmp%model%slopetyp)
+    call fld_add("shdmin"    , "min fractional coverage of green veg"                              , "1"      , ptr1r8=noahmp%model%shdmin)
+    call fld_add("shdmax"    , "max fractional coverage of green veg"                              , "1"      , ptr1r8=noahmp%model%shdmax)
+    call fld_add("snoalb"    , "upper bound on max albedo over deep snow"                          , "1"      , ptr1r8=noahmp%model%snoalb)
+    call fld_add("sfalb"     , "mean sfc diffuse sw albedo"                                        , "1"      , ptr1r8=noahmp%model%sfalb)
+    call fld_add("xlatin"    , "latitude"                                                          , "radian" , ptr1r8=noahmp%model%xlatin)
+    call fld_add("xcoszin"   , "cosine of zenith angle"                                            , "degree" , ptr1r8=noahmp%model%xcoszin)
+    call fld_add("garea"     , "area of the grid cell"                                             , "m2"     , ptr1r8=noahmp%domain%garea)
+    call fld_add("rainn_mp"  , "microphysics non-convective precipitation"                         , "mm"     , ptr1r8=noahmp%model%rainn_mp)
+    call fld_add("rainc_mp"  , "microphysics convective precipitation"                             , "mm"     , ptr1r8=noahmp%model%rainc_mp)
+    call fld_add("snow_mp"   , "microphysics snow"                                                 , "mm"     , ptr1r8=noahmp%model%snow_mp)
+    call fld_add("graupel_mp", "microphysics graupel"                                              , "mm"     , ptr1r8=noahmp%model%graupel_mp)
+    call fld_add("ice_mp"    , "microphysics ice/hail"                                             , "mm"     , ptr1r8=noahmp%model%ice_mp)
+    call fld_add("weasd"     , "water equivalent accumulated snow depth"                           , "mm"     , ptr1r8=noahmp%model%weasd)
+    call fld_add("snwdph"    , "snow depth (water equiv) over land"                                , "m"      , ptr1r8=noahmp%model%snwdph)
+    call fld_add("tskin"     , "ground surface skin temperature"                                   , "K"      , ptr1r8=noahmp%model%tskin)
+    call fld_add("tprcp"     , "total precipitation"                                               , "mm"     , ptr1r8=noahmp%forc%tprcp)
+    call fld_add("srflag"    , "snow/rain flag for precipitation"                                  , "1"      , ptr1r8=noahmp%model%srflag)
+    !!call fld_add("smc"       ,"total soil moisture content"                                       ,"m3/m3"  , v2r8=noahmp%model%smc, zaxis="z")
+    !!call fld_add("stc"       ,"soil temperature"                                                  ,"K"      , v2r8=noahmp%model%stc, zaxis="z")
+    !!call fld_add("slc"       ,"liquid soil moisture"                                              ,"m3/m3"  , v2r8=noahmp%model%slc, zaxis="z")
+    call fld_add("canopy"    , "canopy moisture content"                                           , "m"      , ptr1r8=noahmp%model%canopy)
+    call fld_add("trans"     , "total plant transpiration"                                         , "m/2"    , ptr1r8=noahmp%model%trans)
+    call fld_add("tsurf"     , "surface skin temperature (after iteration)"                        , "K"      , ptr1r8=noahmp%model%tsurf)
+    call fld_add("zorl"      , "surface roughness"                                                 , "m"      , ptr1r8=noahmp%model%zorl)
+    call fld_add("rb1"       , "bulk Richardson number at the surface over land"                   , "1"      , ptr1r8=noahmp%model%rb1)
+    call fld_add("fm1"       , "Monin-Obukhov similarity function for momentum over land"          , "1"      , ptr1r8=noahmp%model%fm1)
+    call fld_add("fh1"       , "Monin-Obukhov similarity function for heat over land"              , "1"      , ptr1r8=noahmp%model%fh1)
+    call fld_add("ustar1"    , "surface friction velocity over land"                               , "m/s"    , ptr1r8=noahmp%model%ustar1)
+    call fld_add("stress1"   , "surface wind stress over land"                                     , "m2/s2"  , ptr1r8=noahmp%model%stress1)
+    call fld_add("fm101"     , "Monin-Obukhov similarity parameter for momentum at 10m over land"  , "1"      , ptr1r8=noahmp%model%fm101)
+    call fld_add("fh21"      , "Monin-Obukhov similarity parameter for heat at 2m over land"       , "1"      , ptr1r8=noahmp%model%fh21)
+    call fld_add("snowxy"    , "actual no. of snow layers"                                         , "1"      , ptr1r8=noahmp%model%snowxy)
+    call fld_add("tvxy"      , "vegetation leaf temperature"                                       , "K"      , ptr1r8=noahmp%model%tvxy)
+    call fld_add("tgxy"      , "bulk ground surface temperature"                                   , "K"      , ptr1r8=noahmp%model%tgxy)
+    call fld_add("canicexy"  , "canopy-intercepted ice"                                            , "mm"     , ptr1r8=noahmp%model%canicexy)
+    call fld_add("canliqxy"  , "canopy-intercepted liquid water"                                   , "mm"     , ptr1r8=noahmp%model%canliqxy)
+    call fld_add("eahxy"     , "canopy air vapor pressure"                                         , "Pa"     , ptr1r8=noahmp%model%eahxy)
+    call fld_add("tahxy"     , "canopy air temperature"                                            , "K"      , ptr1r8=noahmp%model%tahxy)
+    call fld_add("cmxy"      , "bulk momentum drag coefficient"                                    , "m/s"    , ptr1r8=noahmp%model%cmxy)
+    call fld_add("chxy"      , "bulk sensible heat exchange coefficient"                           , "m/s"    , ptr1r8=noahmp%model%chxy)
+    call fld_add("fwetxy"    , "wetted or snowed fraction of the canopy"                           , "1"      , ptr1r8=noahmp%model%fwetxy)
+    call fld_add("sneqvoxy"  , "snow mass at last time step"                                       , "mm"     , ptr1r8=noahmp%model%sneqvoxy)
+    call fld_add("alboldxy"  , "snow albedo at last time step"                                     , "1"      , ptr1r8=noahmp%model%alboldxy)
+    call fld_add("qsnowxy"   , "snowfall on the ground"                                            , "mm/s"   , ptr1r8=noahmp%model%qsnowxy)
+    call fld_add("wslakexy"  , "lake water storage"                                                , "mm"     , ptr1r8=noahmp%model%wslakexy)
+    call fld_add("zwtxy"     , "water table depth"                                                 , "m"      , ptr1r8=noahmp%model%zwtxy)
+    call fld_add("waxy"      , "water in the aquifer"                                              , "mm"     , ptr1r8=noahmp%model%waxy)
+    call fld_add("wtxy"      , "groundwater storage"                                               , "mm"     , ptr1r8=noahmp%model%wtxy)
+    !!call fld_add("tsnoxy"    ,"temperature in surface snow"                                       ,"K"      , v2r8=noahmp%model%tsnoxy , zaxis="z1")
+    !!call fld_add("zsnsoxy"   ,"depth from the top of the snow surface at the bottom of the layer" ,"m"      , v2r8=noahmp%model%zsnsoxy, zaxis="z2")
+    !!call fld_add("snicexy"   ,"lwe thickness of ice in surface snow"                              ,"mm"     , v2r8=noahmp%model%snicexy, zaxis="z1")
+    !!call fld_add("snliqxy"   ,"snow layer liquid water"                                           ,"mm"     , v2r8=noahmp%model%snliqxy, zaxis="z1")
+    call fld_add("lfmassxy"  , "leaf mass"                                                         , "g/m2"   , ptr1r8=noahmp%model%lfmassxy)
+    call fld_add("rtmassxy"  , "mass of fine roots"                                                , "g/m2"   , ptr1r8=noahmp%model%rtmassxy)
+    call fld_add("stmassxy"  , "stem mas"                                                          , "g/m2"   , ptr1r8=noahmp%model%stmassxy)
+    call fld_add("woodxy"    , "mass of wood incl woody roots"                                     , "g/m2"   , ptr1r8=noahmp%model%woodxy)
+    call fld_add("stblcpxy"  , "stable carbon in deep soil"                                        , "g/m2"   , ptr1r8=noahmp%model%stblcpxy)
+    call fld_add("fastcpxy"  , "short-lived carbon, shallow soil"                                  , "g/m2"   , ptr1r8=noahmp%model%fastcpxy)
+    call fld_add("xlaixy"    , "leaf area index"                                                   , "1"      , ptr1r8=noahmp%model%xlaixy)
+    call fld_add("xsaixy"    , "stem area index"                                                   , "1"      , ptr1r8=noahmp%model%xsaixy)
+    call fld_add("taussxy"   , "snow age factor"                                                   , "1"      , ptr1r8=noahmp%model%taussxy)
+    !!call fld_add("smoiseq"   ,"equilibrium soil water content"                                    ,"m3/m3"  , v2r8=noahmp%model%smoiseq, zaxis="z")
+    call fld_add("smcwtdxy"  , "soil moisture content in the layer to the water table when deep"   , "mm"     , ptr1r8=noahmp%model%smcwtdxy)
+    call fld_add("deeprechxy", "recharge to the water table when deep"                             , "1"      , ptr1r8=noahmp%model%deeprechxy)
+    call fld_add("rechxy"    , "recharge to the water table (diagnostic)"                          , "1"      , ptr1r8=noahmp%model%rechxy)
+    call fld_add("albdvis"   , "albedo - direct visible"                                           , "1"      , ptr1r8=noahmp%model%albdvis)
+    call fld_add("albdnir"   , "albedo - direct NIR"                                               , "1"      , ptr1r8=noahmp%model%albdnir)
+    call fld_add("albivis"   , "albedo - diffuse visible"                                          , "1"      , ptr1r8=noahmp%model%albivis)
+    call fld_add("albinir"   , "albedo - diffuse NIR"                                              , "1"      , ptr1r8=noahmp%model%albinir)
+    call fld_add("emiss"     , "surface emissivity"                                                , "1"      , ptr1r8=noahmp%model%emiss)
+    call fld_add("sncovr1"   , "snow cover over land"                                              , "1"      , ptr1r8=noahmp%model%sncovr1)
+    call fld_add("qsurf"     , "specific humidity at sfc"                                          , "kg/kg"  , ptr1r8=noahmp%model%qsurf)
+    call fld_add("gflux"     , "soil heat flux"                                                    , "W/m2"   , ptr1r8=noahmp%model%gflux)
+    call fld_add("drain"     , "subsurface runoff"                                                 , "mm/s"   , ptr1r8=noahmp%model%drain)
+    call fld_add("evap"      , "evaporation from latent heat flux"                                 , "mm/s"   , ptr1r8=noahmp%model%evap)
+    call fld_add("hflx"      , "sensible heat flux"                                                , "W/m2"   , ptr1r8=noahmp%model%hflx)
+    call fld_add("ep"        , "potential evaporation"                                             , "W/m2"   , ptr1r8=noahmp%model%ep)
+    call fld_add("runoff"    , "surface runoff"                                                    , "m/s"    , ptr1r8=noahmp%model%runoff)
+    call fld_add("cmm"       , "cm * rho"                                                          , "m/s"    , ptr1r8=noahmp%model%cmm)
+    call fld_add("chh"       , "ch * rho"                                                          , "kg/m2/s", ptr1r8=noahmp%model%chh)
+    call fld_add("evbs"      , "direct soil evaporation"                                           , "m/s"    , ptr1r8=noahmp%model%evbs)
+    call fld_add("evcw"      , "canopy water evaporation"                                          , "m/s"    , ptr1r8=noahmp%model%evcw)
+    call fld_add("sbsno"     , "sublimation/deposit from snopack"                                  , "m/s"    , ptr1r8=noahmp%model%sbsno)
+    call fld_add("pah"       , "precipitation advected heat - total"                               , "W/m2"   , ptr1r8=noahmp%model%pah)
+    call fld_add("ecan"      , "evaporation of intercepted water"                                  , "kg/m2/s", ptr1r8=noahmp%model%ecan)
+    call fld_add("etran"     , "transpiration rate"                                                , "kg/m2/s", ptr1r8=noahmp%model%etran)
+    call fld_add("edir"      , "soil surface evaporation rate"                                     , "kg/m2/s", ptr1r8=noahmp%model%edir)
+    call fld_add("snowc"     , "fractional snow cover"                                             , "1"      , ptr1r8=noahmp%model%snowc)
+    call fld_add("stm"       , "total soil column moisture content"                                , "m"      , ptr1r8=noahmp%model%stm)
+    call fld_add("snohf"     , "snow/freezing-rain latent heat flux"                               , "W/m2"   , ptr1r8=noahmp%model%snohf)
+    call fld_add("smcwlt2"   , "dry soil moisture threshold"                                       , "m3/m3"  , ptr1r8=noahmp%model%smcwlt2)
+    call fld_add("smcref2"   , "soil moisture threshold"                                           , "m3/m3"  , ptr1r8=noahmp%model%smcref2)
+    call fld_add("wet1"      , "normalized soil wetness"                                           , "1"      , ptr1r8=noahmp%model%wet1)
+    call fld_add("t2mmp"     , "combined T2m from tiles"                                           , "K"      , ptr1r8=noahmp%model%t2mmp)
+    call fld_add("q2mp"      , "combined q2m from tiles"                                           , "kg/kg"  , ptr1r8=noahmp%model%q2mp)
+    call fld_add("zvfun"     , "function of surface roughness length and green vegetation fraction", "1"      , ptr1r8=noahmp%model%zvfun)
+    !!call fld_add("rho"       ,"density"                                                           ,"kg/m3"  , v1r8=noahmp%model%rho)
+    !!call fld_add("hgt"       ,"forcing height"                                                    ,"m"      , v1r8=noahmp%forc%hgt)
+    !!call fld_add("pblh"      ,"height of pbl"                                                     ,"m"      , v1r8=noahmp%model%pblh)
+
+    !----------------------
+    ! Loop over fields and add them to the field bundles
+    !----------------------
+
+    do i = 1, max_indx
+       if (associated(outflds(i)%ptr1r8)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR8, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! add missing value attribute to the field
+          call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'missing_value'/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='missing_value', value=1.0d20, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, outflds(i)%ptr1r8, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       else if (associated(outflds(i)%ptr1r4)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecR4, typekind=ESMF_TYPEKIND_R4, rank=2, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR4, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! add missing value attribute to the field
+          call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'missing_value'/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='missing_value', value=1.0e20, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, outflds(i)%ptr1r4, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       else if (associated(outflds(i)%ptr1i4)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecI4, typekind=ESMF_TYPEKIND_I4, rank=2, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecI4, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! add missing value attribute to the field
+          call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'missing_value'/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='missing_value', value=-999, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, outflds(i)%ptr1i4, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(outflds(i)%short_name), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       end if
+
+       ! add attributes to field on grid
+       call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'long_name'/), rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='long_name', value=trim(outflds(i)%long_name), rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'units'/), rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='units', value=trim(outflds(i)%units), rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       !call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/"ESMF:ungridded_dim_labels"/), rc=rc)
+       !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       !call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name="ESMF:ungridded_dim_labels", value="time", rc=rc)
+       !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! add it to the field bundle on grid
+       call ESMF_FieldBundleAdd(FBgrid, [fgrid], rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! add it to the field bundle on mesh
+       call ESMF_FieldBundleAdd(FBmesh, [fmesh], rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    end do
+
+    !----------------------
+    ! Add metadata to FB, global attributes
+    !----------------------
+
+    !call ESMF_AttributeAdd(FBgrid, convention="NetCDF", purpose="NOAHMP", &
+    !    attrList=(/ "time               ", &
+    !                "time:long_name     ", &
+    !                "time:units         ", &
+    !                "time:cartesian_axis", &
+    !                "time:calendar_type ", &
+    !                "time:calendar      " /), rc=rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !call ESMF_AttributeSet(FBgrid, convention="NetCDF", purpose="NOAHMP", name="time", value=0, rc=rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Create routehandle if it is not provided to transfer data from mesh to grid
+    !----------------------
+
+    !if (present(rh)) then
+    !   rh_local = rh
+    !else
+       call ESMF_FieldBundleRedistStore(FBmesh, FBgrid, routehandle=rh_local, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !end if
+
+    !----------------------
+    ! Move data from ESMF grid to mesh
+    !----------------------
+
+    call ESMF_FieldBundleRedist(FBmesh, FBgrid, rh_local, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Loop over fields on grid and apply mask
+    !----------------------
+
+    ! get mask information
+    call ESMF_FieldBundleGet(FBgrid, fieldName="mask", field=fgrid, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_FieldGet(fgrid, farrayPtr=ptrMask, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    ! apply mask
+    do i = 1, max_indx
+       call ESMF_FieldBundleGet(FBgrid, fieldName=trim(outflds(i)%short_name), field=fgrid, rc=rc)
+       if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+       call ESMF_FieldGet(fgrid, rank=rank, typekind=typekind, rc=rc)
+       if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+       if (rank .eq. 2) then
+          if (typekind == ESMF_TYPEKIND_R4) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr2r4, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             where(ptrMask < 1) ptr2r4 = 1.0e20
+             nullify(ptr2r4)
+          else if (typekind == ESMF_TYPEKIND_R8) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr2r8, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             where(ptrMask < 1) ptr2r8 = 1.0d20
+             nullify(ptr2r8)
+          else if (typekind == ESMF_TYPEKIND_I4) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr2i4, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             where(ptrMask < 1) ptr2i4 = -999
+             nullify(ptr2i4)
+          end if
+       end if
+    end do
+
+    !----------------------
+    ! Write data
+    !----------------------
+
+    call ESMF_FieldBundleWrite(FBgrid, fileName=trim(filename), convention="NetCDF", purpose="NOAHMP", overwrite=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Empty FBs and destroy them 
+    !----------------------
+
+    do i = 1, max_indx
+       ! remove field from both FBs
+       call ESMF_FieldBundleRemove(FBgrid, fieldNameList=[trim(outflds(i)%short_name)], rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       call ESMF_FieldBundleRemove(FBmesh, fieldNameList=[trim(outflds(i)%short_name)], rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    end do
+
+    call ESMF_FieldBundleDestroy(FBgrid, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_FieldBundleDestroy(FBmesh, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !if (.not. present(rh)) then
+       call ESMF_RouteHandleDestroy(rh_local, rc=rc)
+    !end if
+
+    call ESMF_LogWrite(trim(subname)//' done', ESMF_LOGMSG_INFO)
+
   end subroutine write_mosaic_output
+
+  !===============================================================================
+
+  subroutine fld_add(varName, varLName, varUnit, ptr1r4, ptr1r8, ptr1i4, ptr2r4, ptr2r8, ptr2i4, zAxis)
+
+    ! input/output variables
+    character(len=*)  , intent(in)           :: varName
+    character(len=*)  , intent(in)           :: varUnit
+    character(len=*)  , intent(in)           :: varLName
+    real(r4), optional, pointer , intent(in) :: ptr1r4(:)
+    real(r8), optional, pointer , intent(in) :: ptr1r8(:)
+    integer , optional, pointer , intent(in) :: ptr1i4(:)
+    real(r4), optional, pointer , intent(in) :: ptr2r4(:,:)
+    real(r8), optional, pointer , intent(in) :: ptr2r8(:,:)
+    integer , optional, pointer , intent(in) :: ptr2i4(:,:)
+    character(len=*)  , optional, intent(in) :: zAxis
+
+    ! local variables
+    integer                     :: i, indx
+    logical                     :: found, restart
+    character(len=*), parameter :: subname=trim(modName)//': (fld_add) '
+    !-------------------------------------------------------------------------------
+
+    call ESMF_LogWrite(trim(subname)//": called for "//trim(varName), ESMF_LOGMSG_INFO)
+
+    ! find out indices
+    indx = 0
+    found = .false.
+    do i = 1, max_num_variables
+       ! do not add to the list if it is found
+       if (trim(outflds(i)%short_name) == trim(varName)) then
+          indx = i
+          found = .true.
+          exit
+       end if
+    end do
+
+    ! if it is a new entry, increment max_indx
+    if (.not. found) then
+       indx = max_indx+1
+       max_indx = max_indx+1
+       if (max_indx > max_num_variables) then
+          print*, "max_indx > max_num_variables could not add more variable! increase max_num_variables ..."
+          return
+       end if
+    end if
+
+    ! add field metadata 
+    outflds(indx)%short_name = trim(varName)
+    outflds(indx)%units = trim(varUnit)
+    outflds(indx)%long_name = trim(varLName)
+
+    ! assign pointers
+    if (present(ptr1r4)) then
+       outflds(indx)%ptr1r4 => ptr1r4
+    else if (present(ptr1r8)) then
+       outflds(indx)%ptr1r8 => ptr1r8
+    else if (present(ptr1i4)) then
+       outflds(indx)%ptr1i4 => ptr1i4
+    else if (present(ptr2r4)) then
+       outflds(indx)%ptr2r4 => ptr2r4
+    else if (present(ptr2r8)) then
+       outflds(indx)%ptr2r8 => ptr2r8
+    else if (present(ptr2i4)) then
+       outflds(indx)%ptr2i4 => ptr2i4
+    end if
+
+    ! add extra metadata for the fields with z-axis
+    if (present(ptr2r4)) then
+       outflds(indx)%zaxis = trim(zAxis)
+       outflds(indx)%nlev = size(ptr2r4, dim=2)
+    else if (present(ptr2r8)) then
+       outflds(indx)%zaxis = trim(zAxis)
+       outflds(indx)%nlev = size(ptr2r8, dim=2)
+    else if (present(ptr2r8)) then
+       outflds(indx)%zaxis = trim(zAxis)
+       outflds(indx)%nlev = size(ptr2i4, dim=2)
+    end if
+ 
+    call ESMF_LogWrite(trim(subname)//' done for '//trim(varName), ESMF_LOGMSG_INFO)
+
+  end subroutine fld_add  
 
   !=============================================================================
 

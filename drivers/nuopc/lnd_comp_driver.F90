@@ -273,9 +273,9 @@ contains
     !----------------------
 
     if (first_time) then
-       write(filename, fmt='(a,i4,a1,i2.2,a1,i2.2,a1,i5.5)') &
+       write(filename, fmt='(a,i4,a1,i2.2,a1,i2.2,a1,i5.5,a)') &
           trim(noahmp%nmlist%case_name)//'.lnd.ini.', &
-          year, '-', month, '-', day, '-', hour*60*60+minute*60+second
+          year, '-', month, '-', day, '-', hour*60*60+minute*60+second, '.tile#.nc'
        call write_mosaic_output(filename, noahmp, now_time, rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
        first_time = .false.
@@ -372,9 +372,9 @@ contains
 
     ! check the output frequency before calling write method
     if (mod(int(now_time), noahmp%nmlist%output_freq) == 0) then
-       write(filename, fmt='(a,i4,a1,i2.2,a1,i2.2,a1,i5.5)') &
+       write(filename, fmt='(a,i4,a1,i2.2,a1,i2.2,a1,i5.5,a)') &
           trim(noahmp%nmlist%case_name)//'.lnd.out.', &
-          year, '-', month, '-', day, '-', hour*60*60+minute*60+second 
+          year, '-', month, '-', day, '-', hour*60*60+minute*60+second, '.tile#.nc'
        call write_mosaic_output(filename, noahmp, now_time, rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
