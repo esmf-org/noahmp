@@ -21,6 +21,8 @@ module lnd_comp_types
      real(kind=kp), allocatable :: soil_temperature(:,:)
      real(kind=kp), allocatable :: soil_moisture(:,:)
      real(kind=kp), allocatable :: soil_liquid(:,:)
+     real(kind=kp), allocatable :: surface_roughness(:)
+     real(kind=kp), allocatable :: friction_velocity(:)
   end type initial_type
 
   ! data type for forcing
@@ -294,6 +296,8 @@ module lnd_comp_types
      character(len=128) :: long_name = ""        ! variable long name
      character(len=128) :: zaxis = ""            ! name of z-axis
      integer            :: nlev                  ! number of layers in z-axis
+     integer            :: nrec                  ! number of record in file (time axis)
+     !character(len=128) :: input_type = ""       ! input data type
   end type field_type
 
 contains
@@ -320,6 +324,8 @@ contains
     allocate(this%init%soil_temperature(begl:endl,km))
     allocate(this%init%soil_moisture(begl:endl,km))
     allocate(this%init%soil_liquid(begl:endl,km))
+    allocate(this%init%surface_roughness(begl:endl))
+    allocate(this%init%friction_velocity(begl:endl))
 
     allocate(this%forc%t1    (begl:endl))
     allocate(this%forc%q1    (begl:endl))
@@ -466,6 +472,8 @@ contains
     this%init%soil_temperature      = 0.0_kp
     this%init%soil_moisture         = 0.0_kp
     this%init%soil_liquid           = 0.0_kp
+    this%init%surface_roughness     = 0.0_kp
+    this%init%friction_velocity     = 0.0_kp
 
     this%forc%t1     = 0.0_kp
     this%forc%q1     = 0.0_kp

@@ -7,11 +7,11 @@ module lnd_comp_io
   use ESMF          , only : ESMF_FieldBundleGet, ESMF_FieldBundleRead, ESMF_FieldBundleWrite
   use ESMF          , only : ESMF_FieldBundleRemove, ESMF_FieldBundleDestroy
   use ESMF          , only : ESMF_FieldBundleRedistStore, ESMF_FieldBundleRedist
-  use ESMF          , only : ESMF_RouteHandleDestroy, ESMF_RouteHandle
+  use ESMF          , only : ESMF_RouteHandleDestroy, ESMF_RouteHandle, ESMF_FieldWrite
   use ESMF          , only : ESMF_Field, ESMF_FieldCreate, ESMF_FieldGet, ESMF_FieldWriteVTK
-  use ESMF          , only : ESMF_ArraySpec, ESMF_ArraySpecSet
+  use ESMF          , only : ESMF_FieldDestroy, ESMF_ArraySpec, ESMF_ArraySpecSet
   use ESMF          , only : ESMF_LogWrite, ESMF_FieldStatus_Flag, ESMF_GeomType_Flag
-  use ESMF          , only : ESMF_Mesh, ESMF_MeshGet
+  use ESMF          , only : ESMF_Mesh, ESMF_MeshGet, ESMF_FieldBundleAddReplace
   use ESMF          , only : ESMF_KIND_R8, ESMF_TYPEKIND_R8
   use ESMF          , only : ESMF_KIND_R4, ESMF_TYPEKIND_R4
   use ESMF          , only : ESMF_KIND_I4, ESMF_TYPEKIND_I4
@@ -79,27 +79,53 @@ contains
        filename = trim(noahmp%nmlist%input_dir)//'sfc_data.tile#.nc'
 
        ! create field list
-       allocate(flds(4))
+       allocate(flds(9))
        flds(1)%short_name = 'sheleg'; flds(1)%ptr1r8 => noahmp%init%snow_water_equivalent
        flds(2)%short_name = 'snwdph'; flds(2)%ptr1r8 => noahmp%init%snow_depth
        flds(3)%short_name = 'canopy'; flds(3)%ptr1r8 => noahmp%init%canopy_water
        flds(4)%short_name = 'tsea'  ; flds(4)%ptr1r8 => noahmp%init%skin_temperature
-       !flds(5)%short_name = 'stc'   ; flds(5)%ptr1r8 => noahmp%init%soil_temperature
-       !flds(6)%short_name = 'smc'   ; flds(6)%ptr1r8 => noahmp%init%soil_moisture
-       !flds(7)%short_name = 'slc'   ; flds(7)%ptr1r8 => noahmp%init%soil_liquid
+       flds(5)%short_name = 'stc'   ; flds(5)%nrec = noahmp%nmlist%num_soil_levels; flds(5)%ptr2r8 => noahmp%init%soil_temperature
+       flds(6)%short_name = 'smc'   ; flds(6)%nrec = noahmp%nmlist%num_soil_levels; flds(6)%ptr2r8 => noahmp%init%soil_moisture
+       flds(7)%short_name = 'slc'   ; flds(7)%nrec = noahmp%nmlist%num_soil_levels; flds(7)%ptr2r8 => noahmp%init%soil_liquid
+       flds(8)%short_name = 'zorl'  ; flds(8)%ptr1r8 => noahmp%init%surface_roughness
+       flds(9)%short_name = 'uustar'; flds(9)%ptr1r8 => noahmp%init%friction_velocity
     else 
        ! input file name
        write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.initial.tile#.nc'
 
        ! create field list
-       allocate(flds(4))
-       flds(1)%short_name = 'snow_water_equivalent'; flds(1)%ptr1r8 => noahmp%init%snow_water_equivalent
-       flds(2)%short_name = 'snow_depth'           ; flds(2)%ptr1r8 => noahmp%init%snow_depth
-       flds(3)%short_name = 'canopy_water'         ; flds(3)%ptr1r8 => noahmp%init%canopy_water
-       flds(4)%short_name = 'skin_temperature'     ; flds(4)%ptr1r8 => noahmp%init%skin_temperature
-       !flds(5)%short_name = 'soil_temperature'     ; flds(5)%ptr1r8 => noahmp%init%soil_temperature
-       !flds(6)%short_name = 'soil_moisture'        ; flds(6)%ptr1r8 => noahmp%init%soil_moisture
-       !flds(7)%short_name = 'soil_liquid'          ; flds(7)%ptr1r8 => noahmp%init%soil_liquid
+       allocate(flds(7))
+
+       flds(1)%short_name = 'snow_water_equivalent'
+       !flds(1)%input_type = ESMF_TYPEKIND_R4 
+       flds(1)%ptr1r8 => noahmp%init%snow_water_equivalent
+
+       flds(2)%short_name = 'snow_depth'
+       !flds(2)%input_type = ESMF_TYPEKIND_R4
+       flds(2)%ptr1r8 => noahmp%init%snow_depth
+
+       flds(3)%short_name = 'canopy_water'
+       !flds(3)%input_type = ESMF_TYPEKIND_R4
+       flds(3)%ptr1r8 => noahmp%init%canopy_water
+
+       flds(4)%short_name = 'skin_temperature'
+       !flds(4)%input_type = ESMF_TYPEKIND_R4
+       flds(4)%ptr1r8 => noahmp%init%skin_temperature
+
+       flds(5)%short_name = 'soil_temperature'
+       !flds(5)%input_type = ESMF_TYPEKIND_R4
+       flds(5)%nrec = noahmp%nmlist%num_soil_levels
+       flds(5)%ptr2r8 => noahmp%init%soil_temperature
+
+       flds(6)%short_name = 'soil_moisture'
+       !flds(6)%input_type = ESMF_TYPEKIND_R4
+       flds(6)%nrec = noahmp%nmlist%num_soil_levels
+       flds(6)%ptr2r8 => noahmp%init%soil_moisture
+
+       flds(7)%short_name = 'soil_liquid'
+       !flds(7)%input_type = ESMF_TYPEKIND_R4
+       flds(7)%nrec = noahmp%nmlist%num_soil_levels
+       flds(7)%ptr2r8 => noahmp%init%soil_liquid
     end if
 
     call ESMF_LogWrite(subname//' called for '//trim(filename), ESMF_LOGMSG_INFO)
@@ -156,7 +182,9 @@ contains
     ! local variables
     type(field_type), allocatable :: flds(:)
     real(r4), target, allocatable :: tmpr4(:)
+    real(r4), target, allocatable :: tmp2r4(:,:)
     character(len=cl)             :: filename
+    real(r8)        , parameter   :: pi_8 = 3.14159265358979323846_r8
     character(len=*), parameter   :: subname=trim(modName)//':(read_static) '
     !---------------------------------------------------------------------------
 
@@ -167,10 +195,15 @@ contains
     ! allocate teemporary data structures
     !----------------------
 
-    if (.not. allocated(flds)) allocate(flds(1))
+    if (.not. allocated(tmpr4)) then
+       allocate(tmpr4(noahmp%domain%begl:noahmp%domain%endl))
+       tmpr4(:) = 0.0
+    end if
 
-    if (.not. allocated(tmpr4)) allocate(tmpr4(noahmp%domain%begl:noahmp%domain%endl))
-    tmpr4 = 0.0
+    if (.not. allocated(tmp2r4)) then
+       allocate(tmp2r4(noahmp%domain%begl:noahmp%domain%endl,12))
+       tmp2r4(:,:) = 0.0
+    end if
 
     !----------------------
     ! Set data sources
@@ -183,50 +216,63 @@ contains
     ! Read latitude
     !----------------------
 
+    allocate(flds(1))
     filename = trim(noahmp%nmlist%input_dir)//'oro_data.tile#.nc'
     flds(1)%short_name = 'geolat'; flds(1)%ptr1r8 => noahmp%model%xlatin
-    call read_tiled_file(noahmp, filename, flds, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    deallocate(flds)
+
+    ! convert it to radian
+    noahmp%model%xlatin(:) = noahmp%model%xlatin(:)*pi_8/180.0_r8
 
     !----------------------
     ! Read soil type
     !----------------------
 
+    allocate(flds(1))
     write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.soil_type.tile#.nc'
     flds(1)%short_name = 'soil_type'; flds(1)%ptr1r4 => tmpr4
     call read_tiled_file(noahmp, filename, flds, rc=rc)
-    noahmp%model%soiltyp = int(tmpr4)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%soiltyp = int(tmpr4)
+    deallocate(flds)
 
     !----------------------
     ! Read vegetation type
     !----------------------
 
+    allocate(flds(1))
     write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.vegetation_type.tile#.nc'
     flds(1)%short_name = 'vegetation_type'; flds(1)%ptr1r4 => tmpr4
     call read_tiled_file(noahmp, filename, flds, rc=rc)
-    noahmp%model%vegtype = int(tmpr4)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%vegtype = int(tmpr4)
+    deallocate(flds)
 
     !----------------------
     ! Read slope type
     !----------------------
 
+    allocate(flds(1))
     write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.slope_type.tile#.nc'
     flds(1)%short_name = 'slope_type'; flds(1)%ptr1r4 => tmpr4
     call read_tiled_file(noahmp, filename, flds, rc=rc)
-    noahmp%model%slopetyp = int(tmpr4)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%slopetyp = int(tmpr4)
+    deallocate(flds)
 
     !----------------------
     ! Read deep soil temperature
     !----------------------
 
+    allocate(flds(1))
     write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.substrate_temperature.tile#.nc'
     flds(1)%short_name = 'substrate_temperature'; flds(1)%ptr1r4 => tmpr4
     call read_tiled_file(noahmp, filename, flds, rc=rc)
-    noahmp%model%tg3 = dble(tmpr4)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%tg3 = dble(tmpr4)
+    deallocate(flds)
 
     !----------------------
     ! Set emissivity
@@ -246,25 +292,27 @@ contains
     ! Read maximum snow albedo
     !----------------------
 
+    allocate(flds(1))
     write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.maximum_snow_albedo.tile#.nc'
     flds(1)%short_name = 'maximum_snow_albedo'; flds(1)%ptr1r4 => tmpr4
     call read_tiled_file(noahmp, filename, flds, rc=rc)
-    noahmp%model%snoalb = dble(tmpr4)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%snoalb = dble(tmpr4)
+    deallocate(flds)
 
     !----------------------
     ! Read vegetation greenness, monthly average, 12 months
     !----------------------
 
-    !write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.vegetation_greenness.tile#.nc'
-    !flds(1)%short_name = 'vegetation_greenness'; flds(1)%ptr1r4 => tmpr4
-    !call read_tiled_file(noahmp, filename, flds, rc=rc)
-    !noahmp%model%gvf_monthly = dble(tmpr4)
-    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-    !noahmp%model%gvf_monthly(:,:) = ptr(:,1,:)
-    !noahmp%model%shdmin(:) = minval(ptr(:,1,:), dim=2)
-    !noahmp%model%shdmax(:) = maxval(ptr(:,1,:), dim=2)
+    allocate(flds(1))
+    write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', maxval(noahmp%domain%nit), '.vegetation_greenness.tile#.nc'
+    flds(1)%short_name = 'vegetation_greenness'; flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
+    call read_tiled_file(noahmp, filename, flds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    noahmp%model%gvf_monthly(:,:) = dble(tmp2r4)
+    noahmp%model%shdmin(:) = minval(noahmp%model%gvf_monthly(:,:), dim=2)
+    noahmp%model%shdmax(:) = maxval(noahmp%model%gvf_monthly(:,:), dim=2)
+    deallocate(flds)
 
     !----------------------
     ! Set dry
@@ -289,11 +337,16 @@ contains
     integer, optional, intent(inout) :: rc
 
     ! local variables
-    integer                     :: i
+    integer                     :: i, j, k, rank
+    integer, pointer            :: ptr_i4(:)
+    real(r4), pointer           :: ptr_r4(:)
+    real(r8), pointer           :: ptr_r8(:)
     type(ESMF_RouteHandle)      :: rh_local
     type(ESMF_FieldBundle)      :: FBgrid, FBmesh
-    type(ESMF_ArraySpec)        :: arraySpecR4, arraySpecR8
-    type(ESMF_Field)            :: fgrid, fmesh
+    type(ESMF_ArraySpec)        :: arraySpec
+    type(ESMF_Field)            :: fgrid, fmesh, ftmp
+    character(len=cl)           :: fname
+    character(len=cl), allocatable :: fields(:)
     character(len=*), parameter :: subname = trim(modName)//': (read_tiled_file) '
     !-------------------------------------------------------------------------------
 
@@ -317,13 +370,14 @@ contains
     !----------------------
 
     do i = 1, size(flds)
+       ! 2d/r8 field (x,y)
        if (associated(flds(i)%ptr1r8)) then
           ! set field type
-          call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
+          call ESMF_ArraySpecSet(arraySpec, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
           ! create field on grid
-          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR8, staggerloc=ESMF_STAGGERLOC_CENTER, &
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpec, staggerloc=ESMF_STAGGERLOC_CENTER, &
              indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
@@ -331,13 +385,15 @@ contains
           fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr1r8, meshloc=ESMF_MESHLOC_ELEMENT, &
              name=trim(flds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! 2d/r4 field (x,y)
        else if (associated(flds(i)%ptr1r4)) then
           ! set field type
-          call ESMF_ArraySpecSet(arraySpecR4, typekind=ESMF_TYPEKIND_R4, rank=2, rc=rc)
+          call ESMF_ArraySpecSet(arraySpec, typekind=ESMF_TYPEKIND_R4, rank=2, rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
           ! create field on grid
-          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR4, staggerloc=ESMF_STAGGERLOC_CENTER, &
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpec, staggerloc=ESMF_STAGGERLOC_CENTER, &
              indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
@@ -345,7 +401,44 @@ contains
           fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr1r4, meshloc=ESMF_MESHLOC_ELEMENT, &
              name=trim(flds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! 3d/r8 field (x,y,rec)
+       else if (associated(flds(i)%ptr2r8)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpec, typekind=ESMF_TYPEKIND_R8, rank=3, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpec, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), ungriddedLbound=(/1/), &
+             ungriddedUbound=(/flds(i)%nrec/), gridToFieldMap=(/1,2/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr2r8, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(flds(i)%short_name), gridToFieldMap=(/1/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! 3d/r4 field (x,y,rec)
+       else if (associated(flds(i)%ptr2r4)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpec, typekind=ESMF_TYPEKIND_R4, rank=3, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpec, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(flds(i)%short_name), ungriddedLbound=(/1/), &
+             ungriddedUbound=(/flds(i)%nrec/), gridToFieldMap=(/1,2/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, flds(i)%ptr2r4, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(flds(i)%short_name), gridToFieldMap=(/1/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
        end if
+
+       ! debug print
+       call ESMF_LogWrite(trim(subname)//' adding '//trim(flds(i)%short_name)//' to FB', ESMF_LOGMSG_INFO)
 
        ! add it to the field bundle on grid
        call ESMF_FieldBundleAdd(FBgrid, [fgrid], rc=rc)
@@ -381,8 +474,8 @@ contains
     call ESMF_FieldBundleRedist(FBgrid, FBmesh, rh_local, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    call FB_diagnose(FBmesh, trim(subname), rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !call FB_diagnose(FBmesh, trim(subname), rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     !----------------------
     ! Clean memory
@@ -394,10 +487,56 @@ contains
           call ESMF_FieldBundleGet(FBmesh, fieldName=trim(flds(i)%short_name), field=fmesh, rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-          ! write to VTK file before removing field
-          ! TODO: this needs to be extended for 3d fields
-          call ESMF_FieldWriteVTK(fmesh, trim(flds(i)%short_name), rc=rc)
+          ! check its rank
+          call ESMF_FieldGet(fmesh, rank=rank, rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! TODO: ESMF_FieldWriteVTK() call does not support ungridded dimension
+          ! The workaround is implemented in here but it would be nice to extend
+          ! ESMF_FieldWriteVTK() call to handle it.  
+          if (rank > 1) then
+             ! create temporary field
+             if (associated(flds(i)%ptr2r4)) then
+                ftmp = ESMF_FieldCreate(noahmp%domain%mesh, typekind=ESMF_TYPEKIND_R4, &
+                  name=trim(flds(i)%short_name), meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+                call ESMF_FieldGet(ftmp, localDe=0, farrayPtr=ptr_r4, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+             else if (associated(flds(i)%ptr2r8)) then
+                ftmp = ESMF_FieldCreate(noahmp%domain%mesh, typekind=ESMF_TYPEKIND_R8, &
+                  name=trim(flds(i)%short_name), meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+                call ESMF_FieldGet(ftmp, localDe=0, farrayPtr=ptr_r8, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+             else if (associated(flds(i)%ptr2i4)) then
+                ftmp = ESMF_FieldCreate(noahmp%domain%mesh, typekind=ESMF_TYPEKIND_I4, &
+                  name=trim(flds(i)%short_name), meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+                call ESMF_FieldGet(ftmp, localDe=0, farrayPtr=ptr_i4, rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+             end if
+
+             ! write all record to seperate VTK file
+             do j = 1, flds(i)%nrec
+                if (associated(flds(i)%ptr2i4)) ptr_i4(:) = flds(i)%ptr2i4(:,j)
+                if (associated(flds(i)%ptr2r4)) ptr_r4(:) = flds(i)%ptr2r4(:,j)
+                if (associated(flds(i)%ptr2r8)) ptr_r8(:) = flds(i)%ptr2r8(:,j)
+                write(fname, fmt='(A,I2.2)') trim(flds(i)%short_name)//'_rec', j
+                call ESMF_FieldWriteVTK(ftmp, trim(fname), rc=rc)
+                if (ChkErr(rc,__LINE__,u_FILE_u)) return
+             end do
+
+             ! delete temporary field
+             call ESMF_FieldDestroy(ftmp, rc=rc)
+             if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          else
+             ! write field to VTK file
+             call ESMF_FieldWriteVTK(fmesh, trim(flds(i)%short_name), rc=rc)
+             if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          end if
        end do
     end if
 
@@ -439,10 +578,15 @@ contains
     integer           , intent(inout) :: rc
 
     ! local variables
-    integer                     :: i, rank
+    integer                     :: i, k, rank, nlev
     real(r4), pointer           :: ptr2r4(:,:)
     real(r8), pointer           :: ptr2r8(:,:)
-    integer , pointer           :: ptr2i4(:,:), ptrMask(:,:)
+    integer , pointer           :: ptr2i4(:,:)
+    integer , pointer           :: ptrMask(:,:)
+    real(r4), pointer           :: ptr3r4(:,:,:)
+    real(r8), pointer           :: ptr3r8(:,:,:)
+    integer , pointer           :: ptr3i4(:,:,:)
+    character(cl)               :: zaxis_name   
     type(ESMF_RouteHandle)      :: rh_local
     type(ESMF_FieldBundle)      :: FBgrid, FBmesh
     type(ESMF_ArraySpec)        :: arraySpecI4, arraySpecR4, arraySpecR8
@@ -518,7 +662,7 @@ contains
     call fld_add("tskin"     , "ground surface skin temperature"                                   , "K"      , ptr1r8=noahmp%model%tskin)
     call fld_add("tprcp"     , "total precipitation"                                               , "mm"     , ptr1r8=noahmp%forc%tprcp)
     call fld_add("srflag"    , "snow/rain flag for precipitation"                                  , "1"      , ptr1r8=noahmp%model%srflag)
-    !!call fld_add("smc"       ,"total soil moisture content"                                       ,"m3/m3"  , v2r8=noahmp%model%smc, zaxis="z")
+    call fld_add("smc"       ,"total soil moisture content"                                        ,"m3/m3"   , ptr2r8=noahmp%model%smc, zaxis="z")
     !!call fld_add("stc"       ,"soil temperature"                                                  ,"K"      , v2r8=noahmp%model%stc, zaxis="z")
     !!call fld_add("slc"       ,"liquid soil moisture"                                              ,"m3/m3"  , v2r8=noahmp%model%slc, zaxis="z")
     call fld_add("canopy"    , "canopy moisture content"                                           , "m"      , ptr1r8=noahmp%model%canopy)
@@ -606,6 +750,14 @@ contains
     !----------------------
 
     do i = 1, max_indx
+       ! query z axis
+       nlev = 0
+       if (trim(outflds(i)%zaxis) == "z") then
+          nlev = size(noahmp%nmlist%soil_level_nodes)
+          zaxis_name = "soil_levels"
+       end if
+
+       ! 2d/r8 field (x,y)
        if (associated(outflds(i)%ptr1r8)) then
           ! set field type
           call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=2, rc=rc)
@@ -627,6 +779,7 @@ contains
              name=trim(outflds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
+       ! 2d/r4 field (x,y)
        else if (associated(outflds(i)%ptr1r4)) then
           ! set field type
           call ESMF_ArraySpecSet(arraySpecR4, typekind=ESMF_TYPEKIND_R4, rank=2, rc=rc)
@@ -648,6 +801,7 @@ contains
              name=trim(outflds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
+       ! 2d/i4 field (x,y)
        else if (associated(outflds(i)%ptr1i4)) then
           ! set field type
           call ESMF_ArraySpecSet(arraySpecI4, typekind=ESMF_TYPEKIND_I4, rank=2, rc=rc)
@@ -668,9 +822,32 @@ contains
           fmesh = ESMF_FieldCreate(noahmp%domain%mesh, outflds(i)%ptr1i4, meshloc=ESMF_MESHLOC_ELEMENT, &
              name=trim(outflds(i)%short_name), rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! 3d/r8 field (x,y,z)
+       else if (associated(outflds(i)%ptr2r8)) then
+          ! set field type
+          call ESMF_ArraySpecSet(arraySpecR8, typekind=ESMF_TYPEKIND_R8, rank=3, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on grid
+          fgrid = ESMF_FieldCreate(noahmp%domain%grid, arraySpecR8, staggerloc=ESMF_STAGGERLOC_CENTER, &
+             indexflag=ESMF_INDEX_GLOBAL, name=trim(outflds(i)%short_name), ungriddedLbound=(/1/), &
+             ungriddedUbound=(/nlev/), gridToFieldMap=(/1,2/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! add missing value attribute to the field
+          call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'missing_value'/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='missing_value', value=1.0d20, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          ! create field on mesh
+          fmesh = ESMF_FieldCreate(noahmp%domain%mesh, outflds(i)%ptr2r8, meshloc=ESMF_MESHLOC_ELEMENT, &
+             name=trim(outflds(i)%short_name), gridToFieldMap=(/1/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
        end if
 
-       ! add attributes to field on grid
+       ! add long_name and units attributes to the field on grid
        call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'long_name'/), rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
        call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='long_name', value=trim(outflds(i)%long_name), rc=rc)
@@ -681,10 +858,13 @@ contains
        call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name='units', value=trim(outflds(i)%units), rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-       !call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/"ESMF:ungridded_dim_labels"/), rc=rc)
-       !if (ChkErr(rc,__LINE__,u_FILE_u)) return
-       !call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name="ESMF:ungridded_dim_labels", value="time", rc=rc)
-       !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       ! add vertical dimension name to the field on grid if it has ungridded dimension
+       if (nlev > 0) then
+          call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/"ESMF:ungridded_dim_labels"/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          call ESMF_AttributeSet(fgrid, convention="NetCDF", purpose="NOAHMP", name="ESMF:ungridded_dim_labels", valueList=(/trim(zaxis_name)/), rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       end if
 
        ! add it to the field bundle on grid
        call ESMF_FieldBundleAdd(FBgrid, [fgrid], rc=rc)
@@ -764,6 +944,29 @@ contains
              if (chkerr(rc,__LINE__,u_FILE_u)) return
              where(ptrMask < 1) ptr2i4 = -999
              nullify(ptr2i4)
+          end if
+       else if (rank .eq. 3) then
+          if (typekind == ESMF_TYPEKIND_R4) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr3r4, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             do k = 1, ubound(ptr3r4, dim=3)
+                where(ptrMask < 1) ptr3r4(:,:,k) = 1.0e20
+             end do
+             nullify(ptr3r4)
+          else if (typekind == ESMF_TYPEKIND_R8) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr3r8, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             do k = 1, ubound(ptr3r8, dim=3)
+                where(ptrMask < 1) ptr3r8(:,:,k) = 1.0d20
+             end do
+             nullify(ptr3r8)
+          else if (typekind == ESMF_TYPEKIND_I4) then
+             call ESMF_FieldGet(fgrid, farrayPtr=ptr3i4, rc=rc)
+             if (chkerr(rc,__LINE__,u_FILE_u)) return
+             do k = 1, ubound(ptr3i4, dim=3)
+                where(ptrMask < 1) ptr3i4(:,:,k) = -999
+             end do
+             nullify(ptr3i4)
           end if
        end if
     end do
@@ -875,7 +1078,7 @@ contains
     else if (present(ptr2r8)) then
        outflds(indx)%zaxis = trim(zAxis)
        outflds(indx)%nlev = size(ptr2r8, dim=2)
-    else if (present(ptr2r8)) then
+    else if (present(ptr2i4)) then
        outflds(indx)%zaxis = trim(zAxis)
        outflds(indx)%nlev = size(ptr2i4, dim=2)
     end if
