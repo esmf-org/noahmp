@@ -31,7 +31,7 @@ jobs:
       - name: Test Component
         uses: uturuncoglu/nuopc-comp-testing@main 
         with:
-          packages: |
+          dependencies: |
             fms@2022.04
             esmf@8.4.0b15+parallelio
             parallelio@2.5.8+pnetcdf
