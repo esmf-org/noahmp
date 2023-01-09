@@ -33,7 +33,7 @@ jobs:
         with:
           dependencies: |
             libiconv-1.16
-            #fms@2022.04
-            #esmf@8.4.0b15+parallelio
-            #parallelio@2.5.8+pnetcdf
-            #zlib@1.2.12
+#fms@2022.04
+#esmf@8.4.0b15+parallelio
+#parallelio@2.5.8+pnetcdf
+#zlib@1.2.12
