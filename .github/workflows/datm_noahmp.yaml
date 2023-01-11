@@ -29,18 +29,18 @@ jobs:
       # option for spack architecture
       #ARCH=x86_64_v4
 
-    #steps:
-    #  - name: Test Component
-    #    uses: uturuncoglu/nuopc-comp-testing@feature/reusable 
-    #    with:
-    #      dependencies: |
-    #        zlib@1.2.12 
+    steps:
+      - name: Test Component
+        uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+        with:
+          dependencies: |
+            zlib@1.2.12 
 
-  install-deps:
-    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-    with:
-      dependencies: |
-        zlib@1.2.12
+  #install-deps:
+  #  uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+  #  with:
+  #    dependencies: |
+  #      zlib@1.2.12
 
 
 #fms@2022.04
