@@ -20,6 +20,7 @@ jobs:
   # do component specific work 
   comp:
     runs-on: ubuntu-22.04
+    needs: deps
     steps:
       # checkout base repository
       - name: Checkout NoahMP Repository
