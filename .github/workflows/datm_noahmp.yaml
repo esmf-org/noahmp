@@ -31,8 +31,8 @@ jobs:
       # TODO: update fms in spack.yaml as fms~openmp to build it without openmp support 
       - name: Build and Install NoahMP
         run: |       
-          export PATH=${{ needs.deps.outputs.install_dir }}/view/bin:$PATH
-          export ESMFMKFILE=${{ needs.deps.outputs.install_dir }}/view/lib/esmf.mk
+          export PATH=${{ needs.deps.outputs.spack_install_dir }}/view/bin:$PATH
+          export ESMFMKFILE=${{ needs.deps.outputs.spack_install_dir }}/view/lib/esmf.mk
           export NetCDF_ROOT=`nc-config --prefix`
           export FC=gfortran
           echo $ESMFMKFILE
