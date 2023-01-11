@@ -21,7 +21,6 @@ jobs:
 
   # install dependencies
   install-deps:
-    runs-on: ubuntu-22.04
     uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
     with:
       dependencies: |
