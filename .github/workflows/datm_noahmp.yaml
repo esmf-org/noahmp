@@ -36,6 +36,8 @@ jobs:
           export NetCDF_ROOT=`nc-config --prefix`
           export FC=gfortran
           echo $ESMFMKFILE
+          ls ${{ needs.deps.outputs.spack_install_dir }}
+          ls ${{ needs.deps.outputs.spack_install_dir }}/view/bin
           ls ${{ github.workspace }}
           #cd ${{ github.workspace }}
           #mkdir build
