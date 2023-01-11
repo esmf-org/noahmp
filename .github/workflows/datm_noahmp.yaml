@@ -10,37 +10,37 @@ on:
   workflow_dispatch:
   
 jobs:
-  latest-stable:
-    runs-on: ${{ matrix.os }}
+  #latest-stable:
+  #  runs-on: ${{ matrix.os }}
 
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-        - ubuntu-22.04
-    
-    env:
-      # set token to access gh command
-      GH_TOKEN: ${{ github.token }}
-      # installation location for spack and other components
-      #INSTALL_DIR: ${{ github.workspace }}/install
-      # option for retention period for artifacts, default is 90 days
-      #ARTIFACTS_RETENTION_PERIOD: 2
-      # option for spack architecture
-      #ARCH=x86_64_v4
+  #  strategy:
+  #    fail-fast: false
+  #    matrix:
+  #      os:
+  #      - ubuntu-22.04
+  #  
+  #  env:
+  #    # set token to access gh command
+  #    GH_TOKEN: ${{ github.token }}
+  #    # installation location for spack and other components
+  #    #INSTALL_DIR: ${{ github.workspace }}/install
+  #    # option for retention period for artifacts, default is 90 days
+  #    #ARTIFACTS_RETENTION_PERIOD: 2
+  #    # option for spack architecture
+  #    #ARCH=x86_64_v4
 
-    steps:
-      - name: Test Component
-        uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-        with:
-          dependencies: |
-            zlib@1.2.12 
+  #  #steps:
+  #  #  - name: Test Component
+  #  #    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+  #  #    with:
+  #  #      dependencies: |
+  #  #        zlib@1.2.12 
 
-  #install-deps:
-  #  uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-  #  with:
-  #    dependencies: |
-  #      zlib@1.2.12
+  install-deps:
+    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+    with:
+      dependencies: |
+        zlib@1.2.12
 
 
 #fms@2022.04
