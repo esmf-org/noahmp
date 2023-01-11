@@ -37,7 +37,7 @@ jobs:
     #        zlib@1.2.12 
 
   install-deps:
-    uses: uturuncoglu/nuopc-comp-testing@feature/reusable
+    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
     with:
       dependencies: |
         zlib@1.2.12
