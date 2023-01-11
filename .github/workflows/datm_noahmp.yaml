@@ -10,21 +10,38 @@ on:
   workflow_dispatch:
   
 jobs:
-  # do component specific staff
-  comp-specific:
-    runs-on: ubuntu-22.04
+  # install dependencies
+  deps:
+    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+    with:
+      dependencies: |
+        zlib@1.2.12
 
+  # do component specific work 
+  comp:
+    runs-on: ubuntu-22.04
     steps:
       # checkout base repository
       - name: Checkout NoahMP Repository
         uses: actions/checkout@v3
 
-  # install dependencies
-  install-deps:
-    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-    with:
-      dependencies: |
-        zlib@1.2.12
+      # build and install component
+      # need to install with openmp support since fms build with it
+      # TODO: update fms in spack.yaml as fms~openmp to build it without openmp support 
+      - name: Build and Install NoahMP
+        run: |       
+          export PATH=${{ needs.deps.outputs.install_dir }}/view/bin:$PATH
+          export ESMFMKFILE=${{ needs.deps.outputs.install_dir }}/view/lib/esmf.mk
+          export NetCDF_ROOT=`nc-config --prefix`
+          export FC=gfortran
+          echo $ESMFMKFILE
+          ls ${{ github.workspace }}
+          #cd ${{ github.workspace }}
+          #mkdir build
+          #cd build
+          #cmake -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} -DOPENMP=ON ../
+          #make
+          #make install
 
 
 #fms@2022.04
