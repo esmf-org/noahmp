@@ -11,17 +11,26 @@ on:
   
 jobs:
   # install dependencies
-  deps:
-    uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-    with:
-      dependencies: |
-        zlib@1.2.12
+  #deps:
+  #  uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+  #  with:
+  #    dependencies: |
+  #      zlib@1.2.12
+  #      fms@2022.04
+  #      esmf@8.4.0b15+parallelio
+  #      parallelio@2.5.8+pnetcdf
 
   # do component specific work 
   comp:
     runs-on: ubuntu-22.04
-    needs: deps
+    #needs: deps
     steps:
+      - name: Install Dependencies
+        uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
+        with:
+          dependencies: |
+            zlib@1.2.12
+
       # checkout base repository
       - name: Checkout NoahMP Repository
         uses: actions/checkout@v3
@@ -45,9 +54,3 @@ jobs:
           #cmake -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} -DOPENMP=ON ../
           #make
           #make install
-
-
-#fms@2022.04
-#esmf@8.4.0b15+parallelio
-#parallelio@2.5.8+pnetcdf
-#zlib@1.2.12
