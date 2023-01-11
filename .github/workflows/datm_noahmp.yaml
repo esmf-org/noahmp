@@ -23,16 +23,21 @@ jobs:
       # set token to access gh command
       GH_TOKEN: ${{ github.token }}
       # installation location for spack and other components
-      INSTALL_DIR: ${{ github.workspace }}/install
+      #INSTALL_DIR: ${{ github.workspace }}/install
       # option for retention period for artifacts, default is 90 days
-      ARTIFACTS_RETENTION_PERIOD: 2
+      #ARTIFACTS_RETENTION_PERIOD: 2
+      # option for spack architecture
+      #ARCH=x86_64_v4
 
     steps:
       - name: Test Component
-        uses: uturuncoglu/nuopc-comp-testing@main 
+        uses: uturuncoglu/nuopc-comp-testing@feature/reusable 
         with:
           dependencies: |
             zlib@1.2.12 
+
+
+
 #fms@2022.04
 #esmf@8.4.0b15+parallelio
 #parallelio@2.5.8+pnetcdf
