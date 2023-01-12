@@ -6,7 +6,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [ develop ]
-  # following is required to run action manually
   workflow_dispatch:
   
 jobs:
@@ -22,8 +21,10 @@ jobs:
     env:
       # set token to access gh command
       GH_TOKEN: ${{ github.token }}
-      # installation location for spack and other components
-      INSTALL_DIR: ${{ github.workspace }}/install
+      # installation location for application
+      APP_INSTALL_DIR: ${{ github.workspace }}/install
+      # installation location for dependencies
+      DEP_INSTALL_DIR: ~/.spack-ci
       # option for retention period for artifacts, default is 90 days
       ARTIFACTS_RETENTION_PERIOD: 2
 
@@ -33,14 +34,32 @@ jobs:
         with:
           dependencies: |
             zlib@1.2.12 
+            fms@2022.04
+            esmf@8.4.0b15+parallelio
+            parallelio@2.5.8+pnetcdf
+          install_dir: ${{ env.DEP_INSTALL_DIR }}
 
+      # checkout base repository
+      - name: Checkout NoahMP Repository
+        uses: actions/checkout@v3
+
+      # build and install component
+      - name: Build and Install NoahMP
+        run: |
+          export PATH=${{ env.DEP_INSTALL_DIR }}/view/bin:$PATH
+          export ESMFMKFILE=${{ env.DEP_INSTALL_DIR }}/view/lib/esmf.mk
+          export NetCDF_ROOT=`nc-config --prefix`
+          export FC=gfortran
+          cd ${{ github.workspace }}
+          mkdir build
+          cd build
+          cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
+          make
+          make install
 
 
 
     #uses: uturuncoglu/nuopc-comp-testing/.github/workflows/install-deps.yaml@feature/reusable
-#        fms@2022.04
-#        esmf@8.4.0b15+parallelio
-#        parallelio@2.5.8+pnetcdf
 
   # do component specific work 
   #comp:
