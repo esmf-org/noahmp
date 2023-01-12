@@ -1,4 +1,4 @@
-:wqname: test_datm_lnd
+name: test_datm_lnd
 
 on:
   push:
@@ -18,14 +18,21 @@ jobs:
       matrix:
         os:
         - ubuntu-22.04
+    
+    env:
+      # set token to access gh command
+      GH_TOKEN: ${{ github.token }}
+      # installation location for spack and other components
+      INSTALL_DIR: ${{ github.workspace }}/install
+      # option for retention period for artifacts, default is 90 days
+      ARTIFACTS_RETENTION_PERIOD: 2
 
-  steps:
-    - name: Test Component
-      uses: uturuncoglu/nuopc-comp-testing@main
-      with:
-        dependencies: |
-          zlib@1.2.12
-
+    steps:
+      - name: Test Component
+        uses: uturuncoglu/nuopc-comp-testing@main 
+        with:
+          dependencies: |
+            zlib@1.2.12 
 
 
 
