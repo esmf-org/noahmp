@@ -22,7 +22,7 @@ jobs:
       # set token to access gh command
       GH_TOKEN: ${{ github.token }}
       # installation location for application
-      APP_INSTALL_DIR: ${{ github.workspace }}/install
+      APP_INSTALL_DIR: ~/app 
       # installation location for dependencies
       DEP_INSTALL_DIR: ~/.spack-ci
       # option for retention period for artifacts, default is 90 days
@@ -38,11 +38,12 @@ jobs:
             esmf@8.4.0b15+parallelio
             parallelio@2.5.8+pnetcdf
           dependencies_install_dir: ${{ env.DEP_INSTALL_DIR }}
+          app_install_dir: ${{ env.APP_INSTALL_DIR }}
 
       - name: Debug
         run: |
-          ls -al ${{ github.workspace }}
-          ls -al ${{ github.workspace }}/cdeps/install
+          ls -al ${{ env.APP_INSTALL_DIR }} 
+          ls -al ${{ env.APP_INSTALL_DIR }}/cdeps
 
 
 
