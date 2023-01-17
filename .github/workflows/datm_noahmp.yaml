@@ -45,7 +45,7 @@ jobs:
             export ESMFMKFILE=${{ env.DEP_INSTALL_DIR }}/view/lib/esmf.mk
             export NetCDF_ROOT=${{ env.DEP_INSTALL_DIR }}/view
             export FC=gfortran
-            cd ${{ env.APP_INSTALL_DIR }}/cdeps
+            cd ${{ env.APP_INSTALL_DIR }}/noahmp
             mkdir build
             cd build
             cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
