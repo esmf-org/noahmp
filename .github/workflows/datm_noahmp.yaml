@@ -29,11 +29,6 @@ jobs:
       ARTIFACTS_RETENTION_PERIOD: 2
 
     steps:
-      # checkout base repository
-      - name: Checkout NoahMP Repository
-        path: ${{ env.APP_INSTALL_DIR }}/cdeps
-        uses: actions/checkout@v3
-
       # test component
       - name: Test Component
         uses: uturuncoglu/nuopc-comp-testing@main 
