@@ -51,6 +51,8 @@ jobs:
             cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
             make
             make install
+          data_component_name: datm
+          component_module_name: lnd_comp_nuopc
 
       - name: debug
         run: |
