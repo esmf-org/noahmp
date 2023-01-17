@@ -40,18 +40,17 @@ jobs:
             parallelio@2.5.8+pnetcdf
           dependencies_install_dir: ${{ env.DEP_INSTALL_DIR }}
           app_install_dir: ${{ env.APP_INSTALL_DIR }}
-
-          #comp_build: |
-          #  export PATH=${{ env.DEP_INSTALL_DIR }}/view/bin:$PATH
-          #  export ESMFMKFILE=${{ env.DEP_INSTALL_DIR }}/view/lib/esmf.mk
-          #  export NetCDF_ROOT=`nc-config --prefix`
-          #  export FC=gfortran
-          #  cd ${{ env.APP_INSTALL_DIR }}/cdeps
-          #  mkdir build
-          #  cd build
-          #  cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
-          #  make
-          #  make install
+          component_build: |
+            export PATH=${{ env.DEP_INSTALL_DIR }}/view/bin:$PATH
+            export ESMFMKFILE=${{ env.DEP_INSTALL_DIR }}/view/lib/esmf.mk
+            export NetCDF_ROOT=`nc-config --prefix`
+            export FC=gfortran
+            cd ${{ env.APP_INSTALL_DIR }}/cdeps
+            mkdir build
+            cd build
+            cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
+            make
+            make install
 
       - name: debug
         run: |
