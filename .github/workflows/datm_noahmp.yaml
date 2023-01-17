@@ -58,6 +58,8 @@ jobs:
       - name: debug
         run: |
           ls -al ${{ env.APP_INSTALL_DIR }}
+          ls -al ${{ env.APP_INSTALL_DIR }}/run
+          ls -al ${{ env.APP_INSTALL_DIR }}/run/INPUT
 
 
       # build and install component
