@@ -53,6 +53,7 @@ jobs:
             make install
           data_component_name: datm
           component_module_name: lnd_comp_nuopc
+          test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/test_datm_lnd.yaml
 
       - name: debug
         run: |
