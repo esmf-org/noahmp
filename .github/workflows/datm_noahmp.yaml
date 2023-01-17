@@ -22,9 +22,9 @@ jobs:
       # set token to access gh command
       GH_TOKEN: ${{ github.token }}
       # installation location for application
-      APP_INSTALL_DIR: ~/app 
+      APP_INSTALL_DIR: /home/runner/app 
       # installation location for dependencies
-      DEP_INSTALL_DIR: ~/.spack-ci
+      DEP_INSTALL_DIR: /home/runner/.spack-ci
       # option for retention period for artifacts, default is 90 days
       ARTIFACTS_RETENTION_PERIOD: 2
 
