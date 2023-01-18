@@ -68,9 +68,9 @@ config:
         Diagnostic:
           values: 0
         mosaic_file:
-          values: ${INPUT_DIR}/C96_mosaic.nc
+          values: INPUT/grid_spec.nc
         input_dir:
-          values: ${INPUT_DIR}/
+          values: INPUT/
         ic_type:
           values: custom
         num_soil_levels:
