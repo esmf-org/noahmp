@@ -13,6 +13,7 @@ input:
     - /trunk/inputdata/atm/datm7/topo_forcing/topodata_0.9x1.25_USGS_070110_stream_c151201.nc
     - /trunk/inputdata/atm/datm7/topo_forcing/topodata_0.9x1.SCRIP.210520_ESMFmesh.nc
     - /trunk/inputdata/share/meshes/fv1.9x2.5_141008_ESMFmesh.nc
+  target_directory: 'INPUT'
 config:
   nuopc1:
     name: esmxRun.config
