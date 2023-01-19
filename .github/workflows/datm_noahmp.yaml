@@ -54,6 +54,9 @@ jobs:
           data_component_name: datm
           component_module_name: lnd_comp_nuopc
           test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/test_datm_lnd.yaml
+          cache_input_file_list: |
+            ${{ env.APP_INSTALL_DIR }}/run/INPUT
+            ${{ env.APP_INSTALL_DIR }}/run/fd_nems.yaml
 
       #- name: debug
       #  run: |
