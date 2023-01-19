@@ -58,11 +58,9 @@ jobs:
             ${{ env.APP_INSTALL_DIR }}/run/INPUT
             ${{ env.APP_INSTALL_DIR }}/run/fd_nems.yaml
           baseline_files: |
-            ${{ env.APP_INSTALL_DIR }}/run/comp.test.lnd.out.*.nc
-            ${{ env.APP_INSTALL_DIR }}/run/comp.test.cpl.hi.*.nc
-            ${{ env.APP_INSTALL_DIR }}/run/ufs.cpld.datm.r.2000-01-02-00000.nc
-          #artifacts_files: |
-          #  ${{ env.APP_INSTALL_DIR }}/run/PET*
-          #  ${{ env.APP_INSTALL_DIR }}/run/*.txt
-          #  ${{ env.APP_INSTALL_DIR }}/run/*.log  
-          #  ${{ env.APP_INSTALL_DIR }}/run/*.nc
+            ${{ env.APP_INSTALL_DIR }}/run/comp.test.*.nc
+          artifacts_files: |
+            ${{ env.APP_INSTALL_DIR }}/run/PET*
+            ${{ env.APP_INSTALL_DIR }}/run/*.txt
+            ${{ env.APP_INSTALL_DIR }}/run/*.log  
+            ${{ env.APP_INSTALL_DIR }}/run/comp.test.lnd.out.2000-01-01-75600.*
