@@ -59,8 +59,8 @@ jobs:
             ${{ env.APP_INSTALL_DIR }}/run/fd_nems.yaml
           baseline_files: |
             ${{ env.APP_INSTALL_DIR }}/run/comp.test.lnd.out.*.nc
-          artifacts_files: |
-            ${{ env.APP_INSTALL_DIR }}/run/PET*
-            ${{ env.APP_INSTALL_DIR }}/run/*.txt
-            ${{ env.APP_INSTALL_DIR }}/run/*.log  
-            ${{ env.APP_INSTALL_DIR }}/run/*.nc
+          #artifacts_files: |
+          #  ${{ env.APP_INSTALL_DIR }}/run/PET*
+          #  ${{ env.APP_INSTALL_DIR }}/run/*.txt
+          #  ${{ env.APP_INSTALL_DIR }}/run/*.log  
+          #  ${{ env.APP_INSTALL_DIR }}/run/*.nc
