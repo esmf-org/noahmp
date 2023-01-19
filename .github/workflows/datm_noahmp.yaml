@@ -57,8 +57,8 @@ jobs:
           cache_input_file_list: |
             ${{ env.APP_INSTALL_DIR }}/run/INPUT
             ${{ env.APP_INSTALL_DIR }}/run/fd_nems.yaml
-          #baseline_files: |
-          #  ${{ env.APP_INSTALL_DIR }}/run/comp.test.lnd.out.*.nc
+          baseline_files: |
+            ${{ env.APP_INSTALL_DIR }}/run/comp.test.lnd.out.*.nc
           artifacts_files: |
             ${{ env.APP_INSTALL_DIR }}/run/PET*
             ${{ env.APP_INSTALL_DIR }}/run/*.txt
