@@ -15,8 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu-22.04
+        os: [ubuntu-22.04]
+        test: [test_datm_lnd]
     
     env:
       # set token to access gh command
@@ -53,7 +53,7 @@ jobs:
             make install
           data_component_name: datm
           component_module_name: lnd_comp_nuopc
-          test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/test_datm_lnd.yaml
+          test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/${{ matrix.test }}.yaml
           cache_input_file_list: |
             ${{ env.APP_INSTALL_DIR }}/run/INPUT
             ${{ env.APP_INSTALL_DIR }}/run/fd_nems.yaml
