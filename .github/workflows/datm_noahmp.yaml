@@ -6,6 +6,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [ develop ]
+  schedule:
+    - cron: '0 0 * * MON'
+    - cron: '0 0 * * FRI'
   workflow_dispatch:
   
 jobs:
