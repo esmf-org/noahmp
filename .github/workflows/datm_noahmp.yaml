@@ -34,7 +34,7 @@ jobs:
     steps:
       # test component
       - name: Test Component
-        uses: uturuncoglu/nuopc-comp-testing@main 
+        uses: esmf-org/nuopc-comp-testing@main 
         with:
           app_install_dir: ${{ env.APP_INSTALL_DIR }}
           artifacts_files: |
