@@ -59,8 +59,9 @@ jobs:
             cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} ../
             make
             make install
-          component_module_name: lnd_comp_nuopc
+          component_module_name: lnd_comp_nuopc.mod
           data_component_name: datm
+          debug: true
           dependencies: |
             ${{ matrix.esmf }}+external-parallelio
           dependencies_install_dir: ${{ env.DEP_INSTALL_DIR }}
