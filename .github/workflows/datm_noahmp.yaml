@@ -16,10 +16,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-22.04]
         test: [test_datm_lnd]
+        esmf: [esmf@8.5.0]
     
     env:
       # set token to access gh command
@@ -34,9 +34,10 @@ jobs:
     steps:
       # test component
       - name: Test Component
-        uses: esmf-org/nuopc-comp-testing@v1.0.0
+        uses: esmf-org/nuopc-comp-testing@feature/v1.3
         with:
           app_install_dir: ${{ env.APP_INSTALL_DIR }}
+          artifacts_name: artifacts for ${{ matrix.test }} ${{ matrix.os }} ${{ matrix.esmf }}
           artifacts_files: |
             ${{ env.APP_INSTALL_DIR }}/run/PET*
             ${{ env.APP_INSTALL_DIR }}/run/*.txt
@@ -55,15 +56,14 @@ jobs:
             cd ${{ env.APP_INSTALL_DIR }}/noahmp
             mkdir build
             cd build
-            cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} -DOPENMP=ON ../
+            cmake -DCMAKE_INSTALL_PREFIX=${{ env.APP_INSTALL_DIR }} ../
             make
             make install
-          component_module_name: lnd_comp_nuopc
+          component_module_name: lnd_comp_nuopc.mod
           data_component_name: datm
           dependencies: |
-            zlib@1.2.12
-            fms@2022.04
-            esmf@8.4.0b15+parallelio
-            parallelio@2.5.8+pnetcdf
+            ${{ matrix.esmf }}+external-parallelio
           dependencies_install_dir: ${{ env.DEP_INSTALL_DIR }}
+          mpirun_args: --oversubscribe -np 6 --mca btl_tcp_if_include eth0
+          ssh: true
           test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/${{ matrix.test }}.yaml
