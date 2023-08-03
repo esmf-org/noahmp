@@ -61,9 +61,9 @@ jobs:
             make install
           component_module_name: lnd_comp_nuopc.mod
           data_component_name: datm
-          debug: true
           dependencies: |
             ${{ matrix.esmf }}+external-parallelio
           dependencies_install_dir: ${{ env.DEP_INSTALL_DIR }}
           mpirun_args: --oversubscribe -np 6 --mca btl_tcp_if_include eth0
+          ssh: true
           test_definition: ${{ env.APP_INSTALL_DIR }}/noahmp/.github/workflows/tests/${{ matrix.test }}.yaml
