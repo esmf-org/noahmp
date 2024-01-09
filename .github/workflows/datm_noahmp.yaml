@@ -68,9 +68,9 @@ jobs:
         fi
         # esmf
         if [ -z "${{ inputs.esmf_version }}" ]; then
-          str2="\"esmf\": [\"${{ env.esmf_version }}+external-parallelio\"]}"
+          str2="\"esmf\": [\"${{ env.esmf_version }}+external-parallelio\"],"
         else
-          str2="\"esmf\": [\"${{ inputs.esmf_version }}+external-parallelio\"]}"
+          str2="\"esmf\": [\"${{ inputs.esmf_version }}+external-parallelio\"],"
         fi
         # test
         if [ -z "${{ inputs.test }}" ]; then
