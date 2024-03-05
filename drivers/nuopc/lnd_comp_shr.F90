@@ -11,6 +11,7 @@ module lnd_comp_shr
   use NUOPC, only : NUOPC_CompAttributeGet
 
   use lnd_comp_types, only: model_type
+  use lnd_comp_types, only: iglobal, iregional, imesh
   use lnd_comp_kind , only: cl => shr_kind_cl
 
   implicit none
@@ -18,6 +19,12 @@ module lnd_comp_shr
 
   interface FieldRead
      module procedure FieldRead1DI4
+  end interface
+
+  interface ReadConfig
+     module procedure ReadConfigCS
+     module procedure ReadConfigIS
+     module procedure ReadConfigIV
   end interface
 
   public :: ChkErr
@@ -81,6 +88,8 @@ contains
     ! Reads coupling specific namelist options
     ! ----------------------------------------------
 
+    use netcdf
+
     ! input/output variables
     type(ESMF_GridComp), intent(in)   :: gcomp
     type(model_type)  , intent(inout) :: model
@@ -88,6 +97,7 @@ contains
 
     ! local variables
     integer :: n
+    integer :: ncid, dimid, ncerr
     character(len=cl) :: cname
     character(len=cl) :: cvalue
     character(len=cl) :: msg 
@@ -99,36 +109,46 @@ contains
     rc = ESMF_SUCCESS
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
-    ! get debug level
-    call NUOPC_CompAttributeGet(gcomp, name='debug_level', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    if (isPresent .and. isSet) then
-       read(cvalue,*) model%nmlist%debug_level
-    else
-       model%nmlist%debug_level = 1
-    end if
-    call ESMF_LogWrite(trim(subname)//' : debug_level = '//trim(cvalue), ESMF_LOGMSG_INFO)
+    !----------------------
+    ! Generic options 
+    !----------------------
 
-    ! get mosaic file name
-    call NUOPC_CompAttributeGet(gcomp, name='mosaic_file', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    if (isPresent .and. isSet) then
-       model%nmlist%mosaic_file = trim(cvalue)
-    else
-       model%nmlist%mosaic_file = ''
-    end if
-    call ESMF_LogWrite(trim(subname)//' : mosaic_file = '//trim(model%nmlist%mosaic_file), ESMF_LOGMSG_INFO)
+    call ReadConfig(gcomp, 'DebugLevel', model%nmlist%debug_level)
 
-    ! get mesh file name
-    call NUOPC_CompAttributeGet(gcomp, name='mesh_file', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    if (isPresent .and. isSet) then
-       model%nmlist%mesh_file = trim(cvalue)
-    else
-       model%nmlist%mesh_file = ''
-    end if
-    call ESMF_LogWrite(trim(subname)//' : mesh_file = '//trim(model%nmlist%mesh_file), ESMF_LOGMSG_INFO)
+    !----------------------
+    ! Domain options (NUOPC cap)
+    !----------------------
 
+    call ReadConfig(gcomp, 'InputDir'  , model%nmlist%input_dir, dval='INPUT/')
+    call ReadConfig(gcomp, 'MosaicFile', model%nmlist%mosaic_file)
+
+    ! if mosaic file is provided, check number of tiles
+    if (trim(model%nmlist%mosaic_file) /= '') then
+       ! open file
+       ncerr = nf90_open(trim(model%nmlist%mosaic_file), NF90_NOWRITE, ncid=ncid)
+       if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
+       
+       ! query dimension size of ntiles 
+       ncerr = nf90_inq_dimid(ncid, 'ntiles', dimid)
+       if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
+       ncerr = nf90_inquire_dimension(ncid, dimid, len=model%domain%ntiles)
+       if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
+
+       ! close file
+       ncerr = nf90_close(ncid)
+       if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
+
+       ! check if it is global or regional
+       if (model%domain%ntiles > 1) then
+          model%domain%gtype = iglobal
+       else
+          model%domain%gtype = iregional
+       end if
+    end if
+
+    call ReadConfig(gcomp, 'MeshFile', model%nmlist%mesh_file)
+
+    ! extra check for configuration
     if (trim(model%nmlist%mosaic_file) == '' .and. trim(model%nmlist%mesh_file) == '') then
        call ESMF_LogWrite(trim(subname)//': Both mosaic_file and mesh_file are empty. Please define one of them to create land domain. Exiting ...', ESMF_LOGMSG_INFO)
        rc = ESMF_FAILURE
@@ -141,51 +161,229 @@ contains
        return
     end if
 
-    ! get domain file if mesh file is given
-    if (trim(model%nmlist%mesh_file) /= '') then
-       call NUOPC_CompAttributeGet(gcomp, name='domain_file', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-       if (chkerr(rc,__LINE__,u_FILE_u)) return
-       if (isPresent .and. isSet) then
-          model%nmlist%domain_file = trim(cvalue)
-       else
-          call ESMF_LogWrite(trim(subname)//': domain_file needs to be given if mesh_file is provided. Exiting ...', ESMF_LOGMSG_INFO)
-          rc = ESMF_FAILURE
-          return
-       end if
-       call ESMF_LogWrite(trim(subname)//' : domain_file = '//trim(model%nmlist%domain_file), ESMF_LOGMSG_INFO)
+    call ReadConfig(gcomp, 'DomainFile', model%nmlist%domain_file)
+
+    ! extra check for domain file
+    if (trim(model%nmlist%mesh_file) /= '' .and. trim(model%nmlist%domain_file) == '') then
+        call ESMF_LogWrite(trim(subname)//': domain_file needs to be given if mesh_file is provided. Exiting ...', ESMF_LOGMSG_INFO)
+        rc = ESMF_FAILURE
+        return
     end if
 
-    ! get domain layout, only for mosaic grid
-    call NUOPC_CompAttributeGet(gcomp, name='layout', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-    if (chkerr(rc,__LINE__,u_FILE_u)) return
-    if (isPresent .and. isSet) then
-       do n = 1, 2
-          call shr_string_listGetName(cvalue, n, cname, rc)
-          if (chkerr(rc,__LINE__,u_FILE_u)) return
-          read(cname,*) model%domain%layout(n)
-          write(msg, fmt='(A,I1,A)') trim(subname)//': layout(',n,') = '//trim(cname)
-          call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
-       end do
-    else
-       model%domain%layout(:) = -1
-    end if
+    call ReadConfig(gcomp, 'Layout', model%domain%layout)
+    call ReadConfig(gcomp, 'Dims'  , model%domain%dims)
 
-    ! get input directory, only for mosaic grid
-    call NUOPC_CompAttributeGet(gcomp, name='input_dir', value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    if (isPresent .and. isSet) then
-       model%nmlist%input_dir = trim(cvalue)
-    else
-       model%nmlist%input_dir = "INPUT/"
-    end if
-    call ESMF_LogWrite(trim(subname)//': input_dir = '//trim(model%nmlist%input_dir), ESMF_LOGMSG_INFO)
+    !----------------------
+    ! Domain options (NoahMP)
+    !----------------------
 
+    call ReadConfig(gcomp, 'NumSoilLayer', model%noahmp%config%domain%NumSoilLayer)
+    
+    !----------------------
+    ! Model configuration
+    !----------------------
+
+    call ReadConfig(gcomp, 'OptDynamicVeg'             , model%noahmp%config%nmlist%OptDynamicVeg)
+    call ReadConfig(gcomp, 'OptRainSnowPartition'      , model%noahmp%config%nmlist%OptRainSnowPartition)
+    call ReadConfig(gcomp, 'OptSoilWaterTranspiration' , model%noahmp%config%nmlist%OptSoilWaterTranspiration)
+    call ReadConfig(gcomp, 'OptGroundResistanceEvap'   , model%noahmp%config%nmlist%OptGroundResistanceEvap)
+    call ReadConfig(gcomp, 'OptSurfaceDrag'            , model%noahmp%config%nmlist%OptSurfaceDrag)
+    call ReadConfig(gcomp, 'OptStomataResistance'      , model%noahmp%config%nmlist%OptStomataResistance)
+    call ReadConfig(gcomp, 'OptSnowAlbedo'             , model%noahmp%config%nmlist%OptSnowAlbedo)
+    call ReadConfig(gcomp, 'OptCanopyRadiationTransfer', model%noahmp%config%nmlist%OptCanopyRadiationTransfer) 
+    call ReadConfig(gcomp, 'OptSnowSoilTempTime'       , model%noahmp%config%nmlist%OptSnowSoilTempTime)
+    call ReadConfig(gcomp, 'OptSnowThermConduct'       , model%noahmp%config%nmlist%OptSnowThermConduct)
+    call ReadConfig(gcomp, 'OptSoilTemperatureBottom'  , model%noahmp%config%nmlist%OptSoilTemperatureBottom)
+    call ReadConfig(gcomp, 'OptSoilSupercoolWater'     , model%noahmp%config%nmlist%OptSoilSupercoolWater)
+    call ReadConfig(gcomp, 'OptRunoffSurface'          , model%noahmp%config%nmlist%OptRunoffSurface)
+    call ReadConfig(gcomp, 'OptRunoffSubsurface'       , model%noahmp%config%nmlist%OptRunoffSubsurface)
+    call ReadConfig(gcomp, 'OptSoilPermeabilityFrozen' , model%noahmp%config%nmlist%OptSoilPermeabilityFrozen)
+    call ReadConfig(gcomp, 'OptDynVicInfiltration'     , model%noahmp%config%nmlist%OptDynVicInfiltration)
+    call ReadConfig(gcomp, 'OptTileDrainage'           , model%noahmp%config%nmlist%OptTileDrainage)
+    call ReadConfig(gcomp, 'OptIrrigation'             , model%noahmp%config%nmlist%OptIrrigation)
+    call ReadConfig(gcomp, 'OptIrrigationMethod'       , model%noahmp%config%nmlist%OptIrrigationMethod)
+    call ReadConfig(gcomp, 'OptCropModel'              , model%noahmp%config%nmlist%OptCropModel)
+    call ReadConfig(gcomp, 'OptSoilProperty'           , model%noahmp%config%nmlist%OptSoilProperty)
+    call ReadConfig(gcomp, 'OptPedotransfer'           , model%noahmp%config%nmlist%OptPedotransfer)
+    call ReadConfig(gcomp, 'OptGlacierTreatment'       , model%noahmp%config%nmlist%OptGlacierTreatment)
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine ReadNamelist
 
   !=============================================================================
+
+  subroutine ReadConfigIS(gcomp, cname, val, dval)
+
+    ! ----------------------------------------------
+    ! Reads namelist option (scalar, integer) 
+    ! ----------------------------------------------
+
+    use Machine
+
+    ! input/output variables
+    type(ESMF_GridComp), intent(in)    :: gcomp
+    character(len=*)   , intent(in)    :: cname
+    integer            , intent(inout) :: val
+    integer, optional  , intent(in)    :: dval
+
+    ! local variables
+    integer           :: rc
+    character(len=cl) :: cvalue
+    logical           :: isPresent, isSet
+    character(len=*),parameter :: subname=trim(modName)//':(ReadConfigIS) '
+    ! ----------------------------------------------
+
+    call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    if (isPresent .and. isSet) then
+       read(cvalue,*) val
+    else
+       if (present(dval)) then
+          val = dval
+       else
+          val = undefined_int
+       end if
+    end if
+    call ESMF_LogWrite(trim(subname)//' '//trim(cname)//' = '//trim(cvalue), ESMF_LOGMSG_INFO)
+
+  end subroutine ReadConfigIS
+
+  !=============================================================================
+
+  subroutine ReadConfigIV(gcomp, cname, val, dval)
+
+    ! ----------------------------------------------
+    ! Reads namelist option (vector, integer) 
+    ! ----------------------------------------------
+
+    use Machine
+
+    ! input/output variables
+    type(ESMF_GridComp), intent(in)    :: gcomp
+    character(len=*)   , intent(in)    :: cname
+    integer            , intent(inout) :: val(:)
+    integer, optional  , intent(in)    :: dval
+
+    ! local variables
+    integer           :: rc, lsize, n
+    character(len=cl) :: cvalue
+    character(len=cl) :: ctmp
+    character(len=cl) :: msg
+    logical           :: isPresent, isSet
+    character(len=*), parameter :: subname=trim(modName)//':(ReadConfigIV) '
+    ! ----------------------------------------------
+
+    lsize = size(val)
+
+    call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    if (isPresent .and. isSet) then
+       do n = 1, lsize
+          call shr_string_listGetName(cvalue, n, ctmp, rc)
+          if (chkerr(rc,__LINE__,u_FILE_u)) return
+          read(ctmp,*) val(n)
+       end do
+    else
+       if (present(dval)) then
+          val(:) = dval
+       else
+          val(:) = undefined_int
+       end if
+    end if
+    do n = 1, lsize
+       write(msg, fmt='(A,I2,A,I4)') trim(subname)//': '//trim(cname)//'(',n,') = ', val(n)
+       call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+    end do
+
+  end subroutine ReadConfigIV
+
+  !=============================================================================
+
+  subroutine ReadConfigRV(gcomp, cname, val, dval)
+
+    ! ----------------------------------------------
+    ! Reads namelist option (vector, integer) 
+    ! ----------------------------------------------
+
+    use Machine
+
+    ! input/output variables
+    type(ESMF_GridComp), intent(in)    :: gcomp
+    character(len=*)   , intent(in)    :: cname
+    real               , intent(inout) :: val(:)
+    real, optional     , intent(in)    :: dval
+
+    ! local variables
+    integer           :: rc, lsize, n
+    character(len=cl) :: cvalue
+    character(len=cl) :: ctmp
+    character(len=cl) :: msg
+    logical           :: isPresent, isSet
+    character(len=*), parameter :: subname=trim(modName)//':(ReadConfigIV) '
+    ! ----------------------------------------------
+
+    lsize = size(val)
+
+    !call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
+    !if (chkerr(rc,__LINE__,u_FILE_u)) return
+    !if (isPresent .and. isSet) then
+    !   do n = 1, lsize
+    !      call shr_string_listGetName(cvalue, n, ctmp, rc)
+    !      if (chkerr(rc,__LINE__,u_FILE_u)) return
+    !      read(ctmp,*) val(n)
+    !   end do
+    !else
+    !   if (present(dval)) then
+    !      val(:) = dval
+    !   else
+    !      val(:) = undefined_int
+    !   end if
+    !end if
+    !do n = 1, lsize
+    !   write(msg, fmt='(A,I2,A,I4)') trim(subname)//': '//trim(cname)//'(',n,') = ', val(n)
+    !   call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+    !end do
+
+  end subroutine ReadConfigRV
+
+  !=============================================================================
+
+  subroutine ReadConfigCS(gcomp, cname, val, dval)
+
+    ! ----------------------------------------------
+    ! Reads namelist option (scalar, char) 
+    ! ----------------------------------------------
+
+    use Machine
+
+    ! input/output variables
+    type(ESMF_GridComp)       , intent(in)    :: gcomp
+    character(len=*)          , intent(in)    :: cname
+    character(len=*)          , intent(inout) :: val
+    character(len=*), optional, intent(in)    :: dval
+
+    ! local variables
+    integer           :: rc
+    character(len=cl) :: cvalue
+    logical           :: isPresent, isSet
+    character(len=*),parameter :: subname=trim(modName)//':(ReadConfigCS) '
+    ! ----------------------------------------------
+
+    call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (isPresent .and. isSet) then
+       val = trim(cvalue)
+    else
+       if (present(dval)) then
+          val = trim(dval)
+       else
+          val = '' 
+       end if
+    end if
+    call ESMF_LogWrite(trim(subname)//': '//trim(cname)//' = '//trim(val), ESMF_LOGMSG_INFO)
+
+  end subroutine ReadConfigCS
 
   !===============================================================================
   subroutine shr_string_listGetName(list, k, name, rc)

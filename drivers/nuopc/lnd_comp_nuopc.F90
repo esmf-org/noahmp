@@ -28,10 +28,12 @@ module lnd_comp_nuopc
   use NUOPC_Model      , only: model_label_Advance => label_Advance
   use NUOPC_Model      , only: model_label_SetRunClock => label_SetRunClock
 
-  use lnd_comp_types   , only: model_type
   use lnd_comp_domain  , only: SetDomain 
+  use lnd_comp_driver  , only: drv_init
+  use lnd_comp_import_export, only: advertise_fields, realize_fields
   use lnd_comp_shr     , only: ChkErr
   use lnd_comp_shr     , only: ReadNamelist
+  use lnd_comp_types   , only: model_type
 
   implicit none
   private ! except
@@ -176,9 +178,26 @@ contains
 
     ! check mesh for debugging purposes
     if (model%nmlist%debug_level > 2) then
-       call ESMF_MeshWriteVTK(model%domain%mesh, "lnd_mesh", rc=rc)
-       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       if (model%domain%ntiles == 1) then
+          call ESMF_MeshWriteVTK(model%domain%mesh, "lnd_mesh", rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       end if
     end if
+
+    !----------------------
+    ! Initialize NoahMP
+    !----------------------
+
+    call drv_init(gcomp, model, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return     
+
+    ! ---------------------
+    ! Realize the actively coupled fields
+    ! ---------------------
+
+    call realize_fields(importState, exportState, model%domain%mesh, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
