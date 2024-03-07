@@ -14,20 +14,21 @@ module lnd_comp_domain
   use ESMF, only: ESMF_CoordSys_Flag, ESMF_COORDSYS_CART
   use ESMF, only: ESMF_TYPEKIND_R8, ESMF_KIND_R8, ESMF_MeshWriteVTK
   use ESMF, only: ESMF_GridAddItem, ESMF_GRIDITEM_MASK, ESMF_STAGGERLOC_CENTER
+  use ESMF, only: ESMF_GridCreate, ESMF_GridGetCoord, ESMF_INDEX_DELOCAL
   use ESMF, only: ESMF_GridCreateNoPeriDim, ESMF_COORDSYS_SPH_RAD
-  use ESMF, only: ESMF_GridGetCoord, ESMF_INDEX_DELOCAL
+  use ESMF, only: ESMF_FAILURE, ESMF_FILEFORMAT_SCRIP
 
   use lnd_comp_shr  , only: ChkErr
   use lnd_comp_shr  , only: ChkErrNc
   use lnd_comp_shr  , only: FieldRead
   use lnd_comp_types, only: model_type
   use lnd_comp_types, only: field_type
-  use lnd_comp_types, only: iglobal, iregional, imesh
+  use lnd_comp_types, only: iMosaic, iScrip
   use lnd_comp_kind , only: cl => shr_kind_cl
   use lnd_comp_kind , only: r4 => shr_kind_r4
   use lnd_comp_kind , only: r8 => shr_kind_r8
-  use lnd_comp_io   , only: read_tiled_file
-  use lnd_comp_io   , only: get_num_tiles
+  use lnd_comp_io   , only: ReadFile 
+  use lnd_comp_io   , only: GetNumTiles
 
   implicit none
   private
@@ -62,11 +63,11 @@ contains
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
     ! create domain
-    if (model%domain%gtype == iglobal) then
+    if (model%domain%dtype == iMosaic) then
        call SetDomainMosaicGlobal(gcomp, model, rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    else if (model%domain%gtype == iregional) then
-       call SetDomainRegional(gcomp, model, rc)
+    else if (model%domain%dtype == iScrip) then
+       call SetDomainScrip(gcomp, model, rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
 
@@ -96,10 +97,12 @@ contains
     type(field_type)                    :: flds(1)
     integer                             :: n, lsize
     integer                             :: tlb(1), tub(1), tc(1)
+    integer                             :: spatialDim, numOwnedElements
     integer, allocatable                :: decomptile(:,:)
     type(ESMF_Decomp_Flag), allocatable :: decompflagPTile(:,:)
     real(r4), target, allocatable       :: tmpr4(:)
     real(ESMF_KIND_R8), pointer         :: ptr1d(:)
+    real(r8), allocatable               :: ownedElemCoords(:)
     character(len=cl)                   :: filename, msg
     character(len=*), parameter         :: subname = trim(modName)//':(SetDomainMosaicGlobal) '
     !----------------------------------------------------------------------------
@@ -178,7 +181,7 @@ contains
     filename = trim(model%nmlist%input_dir)//'oro_data.tile*.nc'
     flds(1)%short_name = 'land_frac'
     flds(1)%ptr1r4 => tmpr4
-    call read_tiled_file(model, filename, flds, rc=rc)
+    call ReadFile(model, filename, flds, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     model%domain%frac = dble(tmpr4)
 
@@ -211,7 +214,7 @@ contains
     filename = trim(model%nmlist%input_dir)//'oro_data.tile*.nc'
     flds(1)%short_name = 'orog_raw'
     flds(1)%ptr1r4 => tmpr4
-    call read_tiled_file(model, filename, flds, rc=rc)
+    call ReadFile(model, filename, flds, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     ! allocate data
@@ -248,13 +251,47 @@ contains
        model%domain%garea(:) = model%domain%garea(:)*(rearth**2)
     end if
 
+    ! ---------------------
+    ! Query coordiates from ESMF mesh
+    ! ---------------------
+
+    ! determine dimensions in mesh
+    call ESMF_MeshGet(model%domain%mesh, spatialDim=spatialDim, &
+      numOwnedElements=numOwnedElements, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    ! allocate data
+    if (.not. allocated(model%domain%lats)) then
+       allocate(model%domain%lats(numOwnedElements))
+    end if
+    if (.not. allocated(model%domain%lons)) then
+       allocate(model%domain%lons(numOwnedElements))
+    end if
+
+    ! allocate temporary array
+    if (.not. allocated(ownedElemCoords)) then
+       allocate(ownedElemCoords(spatialDim*numOwnedElements))
+    end if
+
+    call ESMF_MeshGet(model%domain%mesh, ownedElemCoords=ownedElemCoords)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    do n = 1,numOwnedElements
+       model%domain%lons(n) = ownedElemCoords(2*n-1)
+       model%domain%lats(n) = ownedElemCoords(2*n)
+    end do
+
+    ! clean memory
+    deallocate(ownedElemCoords)
+    deallocate(tmpr4)
+
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine SetDomainMosaicGlobal
 
   !=============================================================================
 
-  subroutine SetDomainRegional(gcomp, model, rc)
+  subroutine SetDomainScrip(gcomp, model, rc)
 
     use netcdf
 
@@ -264,64 +301,142 @@ contains
     integer, intent(out)            :: rc
 
     ! local variables
-    type(field_type)                    :: flds(1)
-    real(r8), pointer                   :: ptr2d(:,:)
-    real(r4), target, allocatable       :: tmpr4(:,:)
-    character(len=cl)                   :: filename, msg
-    character(len=*), parameter         :: subname = trim(modName)//':(SetDomainMosaicRegional) '
+    integer                       :: n
+    integer                       :: tlb(1), tub(1), tc(1)
+    integer                       :: spatialDim, numOwnedElements
+    character(len=cl)             :: filename, msg
+    logical                       :: isFound
+    type(ESMF_Field)              :: farea
+    type(ESMF_CoordSys_Flag)      :: coordSys
+    type(field_type)              :: flds(1)
+    real(ESMF_KIND_R8), pointer   :: ptr1d(:)
+    real(r4), target, allocatable :: tmpr4(:)
+    real(r8), allocatable         :: ownedElemCoords(:)
+    character(len=*), parameter   :: subname = trim(modName)//':(SetDomainScrip) '
     !----------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
     ! ---------------------
-    ! Create ESMF grid
+    ! Read in SCRIP file and create grid
     ! ---------------------
 
-    model%domain%grid = ESMF_GridCreateNoPeriDim(regDecomp=model%domain%layout(:), &
-       minIndex=(/1,1/), maxIndex=model%domain%dims(:), gridAlign=(/-1,-1/), coordSys=ESMF_COORDSYS_SPH_RAD, &
-       coordTypeKind=ESMF_TYPEKIND_R8, decompflag=(/ESMF_DECOMP_SYMMEDGEMAX,ESMF_DECOMP_SYMMEDGEMAX/), &
-       name="land_grid", indexflag=ESMF_INDEX_GLOBAL, rc=rc)
+    model%domain%grid = ESMF_GridCreate(filename=trim(model%nmlist%scrip_file), fileformat=ESMF_FILEFORMAT_SCRIP, &
+       isSphere=.false., addCornerStagger=.true., indexflag=ESMF_INDEX_GLOBAL, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! ---------------------
+    ! Convert ESMF grid to mesh 
+    ! ---------------------
+
+    model%domain%mesh = ESMF_MeshCreate(model%domain%grid, 'lnd_mesh_from_grid', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! ---------------------
+    ! Query sizes from mesh
+    ! ---------------------
+
+    call ESMF_MeshGetFieldBounds(model%domain%mesh, meshloc=ESMF_MESHLOC_ELEMENT, &
+      totalLBound=tlb, totalUBound=tub, totalCount=tc, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    model%domain%begl = tlb(1)
+    model%domain%endl = tub(1)
+    model%domain%im = tc(1)
+    write(msg, fmt='(A,3I5)') trim(subname)//' : begl, endl, im = ', model%domain%begl, model%domain%endl, model%domain%im
+    call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
 
     !----------------------
     ! Allocate temporary data structures
     !----------------------
 
     if (.not. allocated(tmpr4)) then
-       allocate(tmpr4(model%domain%dims(1),model%domain%dims(2)))
-       tmpr4(:,:) = 0.0
+       allocate(tmpr4(model%domain%begl:model%domain%endl))
+       tmpr4(:) = 0.0
     end if
 
     ! ---------------------
-    ! Get coordinate information from orography file
+    ! Get height from orography file
     ! ---------------------
 
+    ! read field
     filename = trim(model%nmlist%input_dir)//'oro_data.nc'
-
-    flds(1)%short_name = 'geolon'
-    flds(1)%ptr2r4 => tmpr4
-    call read_tiled_file(model, filename, flds, rc=rc)
+    flds(1)%short_name = 'orog_raw'
+    flds(1)%ptr1r4 => tmpr4
+    call ReadFile(model, filename, flds, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    call ESMF_GridGetCoord(model%domain%grid, coordDim=1, farrayPtr=ptr2d, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    ptr2d(:,:) = dble(tmpr4(:,:))
-    nullify(ptr2d)
-   
-    flds(1)%short_name = 'geolat'
-    flds(1)%ptr2r4 => tmpr4
-    call read_tiled_file(model, filename, flds, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return 
+    ! allocate data
+    if (.not. allocated(model%domain%hgt)) then
+       allocate(model%domain%hgt(model%domain%begl:model%domain%endl))
+    end if
+    model%domain%hgt = dble(tmpr4)
 
-    call ESMF_GridGetCoord(model%domain%grid, coordDim=2, farrayPtr=ptr2d, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    ptr2d(:,:) = dble(tmpr4(:,:))
-    nullify(ptr2d)
+    ! ---------------------
+    ! Query cell area 
+    ! ---------------------
 
+    ! create field in R8 type
+    farea = ESMF_FieldCreate(model%domain%mesh, ESMF_TYPEKIND_R8, meshloc=ESMF_MESHLOC_ELEMENT, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! get cell area to the field
+    call ESMF_FieldRegridGetArea(farea, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (.not. allocated(model%domain%garea)) then
+       allocate(model%domain%garea(model%domain%begl:model%domain%endl))
+    end if
+
+    ! retrieve pointer and fill area array
+    call ESMF_FieldGet(farea, farrayPtr=ptr1d, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    model%domain%garea(:) = ptr1d(:)
+
+    ! make unit conversion from square radians to square meters if it is
+    ! required
+    call ESMF_MeshGet(model%domain%mesh, coordSys=coordSys, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+    if (coordSys /= ESMF_COORDSYS_CART) then
+       model%domain%garea(:) = model%domain%garea(:)*(rearth**2)
+    end if
+
+    ! ---------------------
+    ! Query coordiates from ESMF mesh
+    ! ---------------------
+
+    ! determine dimensions in mesh
+    call ESMF_MeshGet(model%domain%mesh, spatialDim=spatialDim, &
+      numOwnedElements=numOwnedElements, rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    ! allocate data
+    if (.not. allocated(model%domain%lats)) then
+       allocate(model%domain%lats(numOwnedElements))
+    end if
+    if (.not. allocated(model%domain%lons)) then
+       allocate(model%domain%lons(numOwnedElements))
+    end if
+
+    ! allocate temporary array
+    if (.not. allocated(ownedElemCoords)) then
+       allocate(ownedElemCoords(spatialDim*numOwnedElements))
+    end if
+
+    call ESMF_MeshGet(model%domain%mesh, ownedElemCoords=ownedElemCoords)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    do n = 1,numOwnedElements
+       model%domain%lons(n) = ownedElemCoords(2*n-1)
+       model%domain%lats(n) = ownedElemCoords(2*n)
+    end do
+
+    ! clean memory
+    deallocate(ownedElemCoords)
+    deallocate(tmpr4)
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
-  end subroutine SetDomainRegional
+  end subroutine SetDomainScrip
 
 end module lnd_comp_domain

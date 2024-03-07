@@ -11,7 +11,7 @@ module lnd_comp_shr
   use NUOPC, only : NUOPC_CompAttributeGet
 
   use lnd_comp_types, only: model_type
-  use lnd_comp_types, only: iglobal, iregional, imesh
+  use lnd_comp_types, only: iMosaic, iScrip
   use lnd_comp_kind , only: cl => shr_kind_cl
 
   implicit none
@@ -25,6 +25,7 @@ module lnd_comp_shr
      module procedure ReadConfigCS
      module procedure ReadConfigIS
      module procedure ReadConfigIV
+     module procedure ReadConfigL
   end interface
 
   public :: ChkErr
@@ -37,7 +38,6 @@ module lnd_comp_shr
   !--------------------------------------------------------------------------
 
   integer :: master_task = 0
-  integer :: dbug = 1
   character(len=1), save  :: listDel  = ":"
   character(*), parameter :: modName =  "(lnd_comp_shr)"
 
@@ -140,49 +140,49 @@ contains
 
        ! check if it is global or regional
        if (model%domain%ntiles > 1) then
-          model%domain%gtype = iglobal
+          model%domain%dtype = iMosaic
+          model%nmlist%isGlobal = .true.
        else
-          model%domain%gtype = iregional
+          call ESMF_LogWrite(trim(subname)//': The mosaic_file is defined but number of tiles are less than 6! &
+             Please define scrip_file for regional applications. Exiting ...', ESMF_LOGMSG_INFO)
+          rc = ESMF_FAILURE
+          return
        end if
     end if
 
-    call ReadConfig(gcomp, 'MeshFile', model%nmlist%mesh_file)
+    ! scrip file
+    call ReadConfig(gcomp, 'ScripFile', model%nmlist%scrip_file)
+
+    if (trim(model%nmlist%scrip_file) /= '') then
+       model%domain%dtype = iScrip
+    end if
+
+    ! regional vs. global domain
+    call ReadConfig(gcomp, 'isGlobal', model%nmlist%isGlobal, dval=.true.)
 
     ! extra check for configuration
-    if (trim(model%nmlist%mosaic_file) == '' .and. trim(model%nmlist%mesh_file) == '') then
-       call ESMF_LogWrite(trim(subname)//': Both mosaic_file and mesh_file are empty. Please define one of them to create land domain. Exiting ...', ESMF_LOGMSG_INFO)
+    if (trim(model%nmlist%mosaic_file) == '' .and. trim(model%nmlist%scrip_file) == '') then
+       call ESMF_LogWrite(trim(subname)//': Both mosaic_file and scrip_file options are empty. &
+          Please define one of them to create land domain. Exiting ...', ESMF_LOGMSG_INFO)
        rc = ESMF_FAILURE
        return
     end if
 
-    if (trim(model%nmlist%mosaic_file) /= '' .and. trim(model%nmlist%mesh_file) /= '') then
-       call ESMF_LogWrite(trim(subname)//': Both mosaic_file and mesh_file are defined. Please define only one of them to create land domain. Exiting ... ', ESMF_LOGMSG_INFO)
+    if (trim(model%nmlist%mosaic_file) /= '' .and. trim(model%nmlist%scrip_file) /= '') then
+       call ESMF_LogWrite(trim(subname)//': Both mosaic_file and scrip_file are defined. &
+          Please define only one of them to create land domain. Exiting ... ', ESMF_LOGMSG_INFO)
        rc = ESMF_FAILURE
        return
-    end if
-
-    call ReadConfig(gcomp, 'DomainFile', model%nmlist%domain_file)
-
-    ! extra check for domain file
-    if (trim(model%nmlist%mesh_file) /= '' .and. trim(model%nmlist%domain_file) == '') then
-        call ESMF_LogWrite(trim(subname)//': domain_file needs to be given if mesh_file is provided. Exiting ...', ESMF_LOGMSG_INFO)
-        rc = ESMF_FAILURE
-        return
     end if
 
     call ReadConfig(gcomp, 'Layout', model%domain%layout)
     call ReadConfig(gcomp, 'Dims'  , model%domain%dims)
 
     !----------------------
-    ! Domain options (NoahMP)
-    !----------------------
-
-    call ReadConfig(gcomp, 'NumSoilLayer', model%noahmp%config%domain%NumSoilLayer)
-    
-    !----------------------
     ! Model configuration
     !----------------------
 
+    call ReadConfig(gcomp, 'NumSoilLayer'              , model%noahmp%config%domain%NumSoilLayer)
     call ReadConfig(gcomp, 'OptDynamicVeg'             , model%noahmp%config%nmlist%OptDynamicVeg)
     call ReadConfig(gcomp, 'OptRainSnowPartition'      , model%noahmp%config%nmlist%OptRainSnowPartition)
     call ReadConfig(gcomp, 'OptSoilWaterTranspiration' , model%noahmp%config%nmlist%OptSoilWaterTranspiration)
@@ -384,6 +384,49 @@ contains
     call ESMF_LogWrite(trim(subname)//': '//trim(cname)//' = '//trim(val), ESMF_LOGMSG_INFO)
 
   end subroutine ReadConfigCS
+
+  !=============================================================================
+
+  subroutine ReadConfigL(gcomp, cname, val, dval)
+
+    ! ----------------------------------------------
+    ! Reads namelist option (scalar, char) 
+    ! ----------------------------------------------
+
+    ! input/output variables
+    type(ESMF_GridComp), intent(in)    :: gcomp
+    character(len=*)   , intent(in)    :: cname
+    logical            , intent(inout) :: val
+    logical, optional  , intent(in)    :: dval
+
+    ! local variables
+    integer           :: rc
+    character(len=cl) :: cvalue
+    logical           :: isPresent, isSet
+    character(len=cl) :: msg
+    character(len=*),parameter :: subname=trim(modName)//':(ReadConfigL) '
+    ! ----------------------------------------------
+
+    call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    val = .false. 
+    if (isPresent .and. isSet) then
+       if (trim(cvalue) .eq. '.true.' .or. trim(cvalue) .eq. 'true' .or. &
+           trim(cvalue) .eq. '.TRUE.' .or. trim(cvalue) .eq. 'TRUE' .or. &
+           trim(cvalue) .eq. '.True.' .or. trim(cvalue) .eq. 'True') then
+          val = .true.
+       end if
+    else
+       if (present(dval)) then
+          val = dval
+       end if
+    end if
+
+    write(msg, fmt='(A,I2,A,L)') trim(subname)//': '//trim(cname)//' = ', val
+    call ESMF_LogWrite(trim(msg)//' = ', ESMF_LOGMSG_INFO)
+
+  end subroutine ReadConfigL
 
   !===============================================================================
   subroutine shr_string_listGetName(list, k, name, rc)

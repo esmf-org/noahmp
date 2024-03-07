@@ -35,6 +35,12 @@ module lnd_comp_io
   use lnd_comp_shr  , only : chkerr
   use lnd_comp_shr  , only : chkerrnc
 
+  implicit none
+  private
+
+  public :: GetNumTiles
+  public :: ReadFile
+
   !--------------------------------------------------------------------------
   ! Private module data
   !--------------------------------------------------------------------------
@@ -46,7 +52,7 @@ module lnd_comp_io
 contains
 !===============================================================================
 
-  integer function get_num_tiles(filename)
+  integer function GetNumTiles(filename)
 
     use netcdf
 
@@ -64,18 +70,18 @@ contains
     ! query dimension size of ntiles 
     ncerr = nf90_inq_dimid(ncid, 'ntiles', dimid)
     if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
-    ncerr = nf90_inquire_dimension(ncid, dimid, len=get_num_tiles)
+    ncerr = nf90_inquire_dimension(ncid, dimid, len=GetNumTiles)
     if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
 
     ! close file
     ncerr = nf90_close(ncid)
     if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
 
-  end function get_num_tiles
+  end function GetNumTiles
 
   !===============================================================================
 
-  subroutine read_tiled_file(model, filename, flds, maskflag, notransfer, rh, rc)
+  subroutine ReadFile(model, filename, flds, maskflag, notransfer, rh, rc)
 
     ! input/output variables
     type(model_type), intent(inout) :: model
@@ -102,7 +108,7 @@ contains
     type(ESMF_TypeKind_Flag)    :: typekind
     character(len=cl)           :: fname
     character(len=cl), allocatable :: fieldNameList(:)
-    character(len=*), parameter :: subname = trim(modName)//': (read_tiled_file) '
+    character(len=*), parameter :: subname = trim(modName)//': (ReadFile) '
     !-----------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
@@ -306,8 +312,6 @@ contains
     ! Apply masking
     !----------------------
 
-    return
-
     do i = 1, size(flds)
        ! get field from FB
        call ESMF_FieldBundleGet(FBmesh, fieldName=trim(flds(i)%short_name), field=fmesh, rc=rc)
@@ -339,7 +343,7 @@ contains
           end if
 
           ! write field to VTK file
-          if (dbug > 0) then
+          if (model%nmlist%debug_level > 0) then
              call ESMF_FieldWriteVTK(fmesh, trim(flds(i)%short_name), rc=rc)
              if (ChkErr(rc,__LINE__,u_FILE_u)) return
           end if
@@ -371,7 +375,7 @@ contains
           end if
  
           ! write field to VTK file, each record seperate file
-          if (dbug > 0) then
+          if (model%nmlist%debug_level > 0) then
              do j = 1, flds(i)%nrec
                 ! file name
                 write(fname, fmt='(A,I2.2)') trim(flds(i)%short_name)//'_rec_', j
@@ -502,6 +506,6 @@ contains
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
-  end subroutine read_tiled_file
+  end subroutine ReadFile
 
 end module lnd_comp_io

@@ -16,9 +16,8 @@ module lnd_comp_types
   public
 
   ! constants
-  integer, parameter :: iglobal   = 1 ! mosaic grid, global
-  integer, parameter :: iregional = 2 ! mosaic grid, regional
-  integer, parameter :: imesh     = 3 ! generic mesh, defined with ESMF mesh file
+  integer, parameter :: iMosaic = 1 ! mosaic grid, global
+  integer, parameter :: iScrip  = 2 ! generic grid and mesh, defined with SCRIP grid definition file
 
   ! data type for domain related variables
   type domain_type
@@ -27,7 +26,7 @@ module lnd_comp_types
      integer                    :: ntiles    ! number of tiles, just for mosaic grid
      integer                    :: layout(2) ! layout for domain decomposition, just for mosaic grid
      integer                    :: dims(2)   ! domain size in both direction, just for regional grid
-     integer                    :: gtype     ! grid type: iglb, ireg, imsh
+     integer                    :: dtype     ! domain type: iMosaicG, iMosaicR, iMesh 
      integer                    :: begl      ! starting index of size in PE
      integer                    :: endl      ! ending index of size in PE
      integer                    :: im        ! number of grid points in each PE
@@ -41,11 +40,11 @@ module lnd_comp_types
 
   ! data type for coupling level namelist options
   type namelist_type
-     character(len=cl) :: mesh_file   ! name of ESMF mesh file
-     character(len=cl) :: domain_file ! name of domain file, incl. mask, area and also land fraction
+     character(len=cl) :: scrip_file  ! name of SCRIP grid definition file 
      character(len=cl) :: mosaic_file ! name of mosaic file
      character(len=cl) :: input_dir   ! input directory for tiled files
      integer           :: debug_level ! debug level
+     logical           :: isGlobal    ! global vs. regional, default is global
   end type namelist_type
 
   ! data type for forcing
