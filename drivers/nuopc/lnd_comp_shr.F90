@@ -113,10 +113,36 @@ contains
     ! Generic options 
     !----------------------
 
+    call ReadConfig(gcomp, 'case_name' , model%nmlist%CaseName)
     call ReadConfig(gcomp, 'DebugLevel', model%nmlist%debug_level)
 
     !----------------------
-    ! Domain options (NUOPC cap)
+    ! Output options 
+    !----------------------
+
+    call ReadConfig(gcomp, 'OutputMode', model%nmlist%OutputMode, dval='all')
+
+    if (trim(model%nmlist%OutputMode) == 'all' .or. &
+        trim(model%nmlist%OutputMode) == 'mid' .or. &
+        trim(model%nmlist%OutputMode) == 'low') then
+    else
+       call ESMF_LogWrite(trim(subname)//": ERROR in OutputMode. It can be only 'all', 'mid' and 'low'.", ESMF_LOGMSG_INFO)
+       rc = ESMF_FAILURE
+       return 
+    end if
+
+    call ReadConfig(gcomp, 'OutputFreq', model%nmlist%OutputFreq, dval=3600)
+
+    if (model%nmlist%OutputFreq == 0) then
+       call ESMF_LogWrite(trim(subname)//": ERROR in OutputFreq. It can not be set to zero!", ESMF_LOGMSG_INFO)
+       rc = ESMF_FAILURE
+       return 
+    end if
+
+    call ReadConfig(gcomp, 'TransposeIO', model%nmlist%TransposeIO, dval=.false.)
+
+    !----------------------
+    ! Domain options
     !----------------------
 
     call ReadConfig(gcomp, 'InputDir'  , model%nmlist%input_dir, dval='INPUT/')
@@ -158,7 +184,7 @@ contains
     end if
 
     ! regional vs. global domain
-    call ReadConfig(gcomp, 'isGlobal', model%nmlist%isGlobal, dval=.true.)
+    call ReadConfig(gcomp, 'IsGlobal', model%nmlist%isGlobal, dval=.true.)
 
     ! extra check for configuration
     if (trim(model%nmlist%mosaic_file) == '' .and. trim(model%nmlist%scrip_file) == '') then

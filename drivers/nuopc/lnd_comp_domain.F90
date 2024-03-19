@@ -3,7 +3,7 @@ module lnd_comp_domain
   ! This file contains domain related coupling routines 
 
   use ESMF, only: operator(/=)
-  use ESMF, only: ESMF_GridComp, ESMF_GridCreateMosaic
+  use ESMF, only: ESMF_GridComp, ESMF_GridGetCoord, ESMF_GridCreateMosaic
   use ESMF, only: ESMF_MeshCreate, ESMF_MeshGet, ESMF_MeshSet, ESMF_FILEFORMAT_ESMFMESH
   use ESMF, only: ESMF_Field, ESMF_FieldGet, ESMF_FieldRead 
   use ESMF, only: ESMF_LogWrite, ESMF_INDEX_GLOBAL, ESMF_Decomp_Flag
@@ -12,7 +12,7 @@ module lnd_comp_domain
   use ESMF, only: ESMF_MeshGetFieldBounds, ESMF_MESHLOC_ELEMENT
   use ESMF, only: ESMF_FieldCreate, ESMF_FieldRegridGetArea
   use ESMF, only: ESMF_CoordSys_Flag, ESMF_COORDSYS_CART
-  use ESMF, only: ESMF_TYPEKIND_R8, ESMF_KIND_R8, ESMF_MeshWriteVTK
+  use ESMF, only: ESMF_TYPEKIND_R8, ESMF_KIND_I4, ESMF_KIND_R8, ESMF_MeshWriteVTK
   use ESMF, only: ESMF_GridAddItem, ESMF_GRIDITEM_MASK, ESMF_STAGGERLOC_CENTER
   use ESMF, only: ESMF_GridCreate, ESMF_GridGetCoord, ESMF_INDEX_DELOCAL
   use ESMF, only: ESMF_GridCreateNoPeriDim, ESMF_COORDSYS_SPH_RAD
@@ -102,6 +102,7 @@ contains
     type(ESMF_Decomp_Flag), allocatable :: decompflagPTile(:,:)
     real(r4), target, allocatable       :: tmpr4(:)
     real(ESMF_KIND_R8), pointer         :: ptr1d(:)
+    real(ESMF_KIND_R8), pointer         :: ptr2d(:,:)
     real(r8), allocatable               :: ownedElemCoords(:)
     character(len=cl)                   :: filename, msg
     character(len=*), parameter         :: subname = trim(modName)//':(SetDomainMosaicGlobal) '
@@ -132,6 +133,23 @@ contains
        indexflag=ESMF_INDEX_GLOBAL, &
        name='lnd_grid', rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! retrieve coordinate information, this will be used for model output
+    call ESMF_GridGetCoord(model%domain%grid, coordDim=1, farrayPtr=ptr2d, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (.not. allocated(model%domain%long)) then
+       allocate(model%domain%long(lbound(ptr2d,dim=1):ubound(ptr2d,dim=1), lbound(ptr2d,dim=2):ubound(ptr2d,dim=2)))
+    end if
+    model%domain%long(:,:) = ptr2d(:,:)
+    nullify(ptr2d)
+
+    call ESMF_GridGetCoord(model%domain%grid, coordDim=2, farrayPtr=ptr2d, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (.not. allocated(model%domain%latg)) then
+       allocate(model%domain%latg(lbound(ptr2d,dim=1):ubound(ptr2d,dim=1),lbound(ptr2d,dim=2):ubound(ptr2d,dim=2)))
+    end if
+    model%domain%latg(:,:) = ptr2d(:,:)
+    nullify(ptr2d)
 
     ! ---------------------
     ! Add mask to the grid
@@ -261,11 +279,11 @@ contains
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
     ! allocate data
-    if (.not. allocated(model%domain%lats)) then
-       allocate(model%domain%lats(numOwnedElements))
+    if (.not. allocated(model%domain%latm)) then
+       allocate(model%domain%latm(numOwnedElements))
     end if
-    if (.not. allocated(model%domain%lons)) then
-       allocate(model%domain%lons(numOwnedElements))
+    if (.not. allocated(model%domain%lonm)) then
+       allocate(model%domain%lonm(numOwnedElements))
     end if
 
     ! allocate temporary array
@@ -277,8 +295,8 @@ contains
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
     do n = 1,numOwnedElements
-       model%domain%lons(n) = ownedElemCoords(2*n-1)
-       model%domain%lats(n) = ownedElemCoords(2*n)
+       model%domain%lonm(n) = ownedElemCoords(2*n-1)
+       model%domain%latm(n) = ownedElemCoords(2*n)
     end do
 
     ! clean memory
@@ -305,11 +323,13 @@ contains
     integer                       :: tlb(1), tub(1), tc(1)
     integer                       :: spatialDim, numOwnedElements
     character(len=cl)             :: filename, msg
-    logical                       :: isFound
+    logical                       :: isFound, isPresent
     type(ESMF_Field)              :: farea
     type(ESMF_CoordSys_Flag)      :: coordSys
     type(field_type)              :: flds(1)
+    integer, allocatable          :: elementMask(:)
     real(ESMF_KIND_R8), pointer   :: ptr1d(:)
+    real(ESMF_KIND_R8), pointer   :: ptr2d(:,:)
     real(r4), target, allocatable :: tmpr4(:)
     real(r8), allocatable         :: ownedElemCoords(:)
     character(len=*), parameter   :: subname = trim(modName)//':(SetDomainScrip) '
@@ -322,9 +342,27 @@ contains
     ! Read in SCRIP file and create grid
     ! ---------------------
 
+    ! create grid
     model%domain%grid = ESMF_GridCreate(filename=trim(model%nmlist%scrip_file), fileformat=ESMF_FILEFORMAT_SCRIP, &
-       isSphere=.false., addCornerStagger=.true., indexflag=ESMF_INDEX_GLOBAL, rc=rc)
+       isSphere=model%nmlist%IsGlobal, addCornerStagger=.true., indexflag=ESMF_INDEX_GLOBAL, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! retrieve coordinate information, this will be used for model output
+    call ESMF_GridGetCoord(model%domain%grid, coordDim=1, farrayPtr=ptr2d, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (.not. allocated(model%domain%long)) then
+       allocate(model%domain%long(lbound(ptr2d,dim=1):ubound(ptr2d,dim=1), lbound(ptr2d,dim=2):ubound(ptr2d,dim=2)))
+    end if
+    model%domain%long(:,:) = ptr2d(:,:)
+    nullify(ptr2d)
+    
+    call ESMF_GridGetCoord(model%domain%grid, coordDim=2, farrayPtr=ptr2d, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    if (.not. allocated(model%domain%latg)) then
+       allocate(model%domain%latg(lbound(ptr2d,dim=1):ubound(ptr2d,dim=1),lbound(ptr2d,dim=2):ubound(ptr2d,dim=2)))
+    end if
+    model%domain%latg(:,:) = ptr2d(:,:)
+    nullify(ptr2d)
 
     ! ---------------------
     ! Convert ESMF grid to mesh 
@@ -346,6 +384,40 @@ contains
     model%domain%im = tc(1)
     write(msg, fmt='(A,3I5)') trim(subname)//' : begl, endl, im = ', model%domain%begl, model%domain%endl, model%domain%im
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
+
+    ! ---------------------
+    ! Retrieve mask information
+    ! ---------------------
+
+    call ESMF_MeshGet(model%domain%mesh, elementMaskIsPresent=isPresent, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    if (isPresent) then
+       ! get mask array from mesh
+       if (.not. allocated(elementMask)) then
+          allocate(elementMask(model%domain%begl:model%domain%endl))
+          elementMask = 0
+       end if
+       call ESMF_MeshGet(model%domain%mesh, elementMask=elementMask, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! set mask
+       if (.not. allocated(model%domain%mask)) then
+          allocate(model%domain%mask(model%domain%begl:model%domain%endl))
+       end if
+       model%domain%mask(:) = elementMask(:)
+       if (allocated(elementMask)) deallocate(elementMask)
+
+       ! set fraction based on mask
+       if (.not. allocated(model%domain%frac)) then
+          allocate(model%domain%frac(model%domain%begl:model%domain%endl))
+       end if
+       where (model%domain%mask(:) > 0)
+          model%domain%frac(:) = 1.0_r8
+       elsewhere
+          model%domain%frac(:) = 0.0_r8
+       end where
+    end if
 
     !----------------------
     ! Allocate temporary data structures
@@ -411,11 +483,11 @@ contains
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
     ! allocate data
-    if (.not. allocated(model%domain%lats)) then
-       allocate(model%domain%lats(numOwnedElements))
+    if (.not. allocated(model%domain%latm)) then
+       allocate(model%domain%latm(numOwnedElements))
     end if
-    if (.not. allocated(model%domain%lons)) then
-       allocate(model%domain%lons(numOwnedElements))
+    if (.not. allocated(model%domain%lonm)) then
+       allocate(model%domain%lonm(numOwnedElements))
     end if
 
     ! allocate temporary array
@@ -427,8 +499,8 @@ contains
     if (chkerr(rc,__LINE__,u_FILE_u)) return
 
     do n = 1,numOwnedElements
-       model%domain%lons(n) = ownedElemCoords(2*n-1)
-       model%domain%lats(n) = ownedElemCoords(2*n)
+       model%domain%lonm(n) = ownedElemCoords(2*n-1)
+       model%domain%latm(n) = ownedElemCoords(2*n)
     end do
 
     ! clean memory

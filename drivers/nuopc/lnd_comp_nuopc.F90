@@ -29,11 +29,14 @@ module lnd_comp_nuopc
   use NUOPC_Model      , only: model_label_SetRunClock => label_SetRunClock
 
   use lnd_comp_domain  , only: SetDomain 
-  use lnd_comp_driver  , only: drv_init
-  use lnd_comp_import_export, only: advertise_fields, realize_fields
   use lnd_comp_shr     , only: ChkErr
   use lnd_comp_shr     , only: ReadNamelist
   use lnd_comp_types   , only: model_type
+  use lnd_comp_import_export, only: AdvertiseFields, RealizeFields, ImportFields
+
+  use lnd_comp_driver  , only: NoahmpDriverInit
+  use lnd_comp_driver  , only: NoahmpDriverMain
+  use lnd_comp_driver  , only: NoahmpDriverFinalize
 
   implicit none
   private ! except
@@ -140,6 +143,13 @@ contains
     rc = ESMF_SUCCESS
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
+    ! ---------------------
+    ! Advertise fields
+    ! ---------------------
+
+    call AdvertiseFields(gcomp, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine InitializeAdvertise
@@ -188,14 +198,14 @@ contains
     ! Initialize NoahMP
     !----------------------
 
-    call drv_init(gcomp, model, rc)
+    call NoahmpDriverInit(gcomp, model, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return     
 
     ! ---------------------
     ! Realize the actively coupled fields
     ! ---------------------
 
-    call realize_fields(importState, exportState, model%domain%mesh, rc)
+    call RealizeFields(importState, exportState, model%domain%mesh, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
 
@@ -221,6 +231,54 @@ contains
     rc = ESMF_SUCCESS
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
+    !-----------------------
+    ! Query the Component for its clock, importState and exportState
+    !-----------------------
+
+    !call NUOPC_ModelGet(gcomp, modelClock=clock, importState=importState, exportState=exportState, rc=rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !-----------------------
+    ! import state
+    !-----------------------
+
+    call ImportFields(gcomp, model, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! diagnostics
+    !----------------------
+
+    !if (dbug > 1) then
+    !   call state_diagnose(importState, subname//': ImportState ',rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !endif
+
+    !----------------------
+    ! Run NoahMP
+    !----------------------
+
+    call NoahmpDriverMain(gcomp, model, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! export state
+    !----------------------
+
+    !if (noahmp%nmlist%has_export) then
+    !   call export_fields(gcomp, noahmp, rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !end if
+
+    !----------------------
+    ! diagnostics
+    !----------------------
+
+    !if (dbug > 1) then
+    !   call state_diagnose(exportState, subname//': ExportState ',rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !endif
+
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine ModelAdvance
@@ -232,11 +290,36 @@ contains
     integer, intent(out) :: rc
 
     ! local variables
+    type(ESMF_Clock)        :: mclock, dclock
+    type(ESMF_Time)         :: mcurrtime, dcurrtime
+    type(ESMF_Time)         :: mstoptime
+    type(ESMF_TimeInterval) :: mtimestep, dtimestep
     character(len=*),parameter :: subname=trim(modName)//':(ModelSetRunClock) '
     !-------------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
+
+    !--------------------------------
+    ! query the Component for its clocks
+    !--------------------------------
+
+    call NUOPC_ModelGet(gcomp, driverClock=dclock, modelClock=mclock, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_ClockGet(dclock, currTime=dcurrtime, timeStep=dtimestep, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_ClockGet(mclock, currTime=mcurrtime, timeStep=mtimestep, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !--------------------------------
+    ! force model clock currtime and timestep to match driver and set stoptime
+    !--------------------------------
+
+    mstoptime = mcurrtime + dtimestep
+    call ESMF_ClockSet(mclock, currTime=dcurrtime, timeStep=dtimestep, stopTime=mstoptime, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
