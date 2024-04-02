@@ -8,15 +8,18 @@ module lnd_comp_driver
   use ESMF, only: ESMF_Clock, ESMF_Time, ESMF_TimeSet
   use ESMF, only: ESMF_TimeInterval, ESMF_TimeGet, ESMF_ClockGet
   use ESMF, only: ESMF_TimeIntervalGet, ESMF_KIND_R8
+  use ESMF, only: ESMF_TimeIsLeapYear
   use ESMF, only: ESMF_SUCCESS, ESMF_LogWrite, ESMF_LOGMSG_INFO
 
   use lnd_comp_types, only: model_type
   use lnd_comp_shr  , only: ChkErr
   use lnd_comp_kind , only: cl => shr_kind_cl
+  use lnd_comp_kind , only: r8 => shr_kind_r8
   use lnd_comp_types, only: histflds, restflds
 
   use lnd_comp_io, only: SetupWriteFields
   use lnd_comp_io, only: WriteFile
+  use lnd_comp_io, only: ReadStatic
 
   use ConfigVarInitMod , only: ConfigVarInitDefault
   use ForcingVarInitMod, only: ForcingVarInitDefault
@@ -51,13 +54,13 @@ contains
   subroutine NoahmpDriverInit(gcomp, model, rc)
 
     ! input/output variables
-    type(ESMF_GridComp), intent(in)   :: gcomp
-    type(model_type)  , intent(inout) :: model
-    integer            , intent(out)  :: rc
+    type(ESMF_GridComp), intent(in)    :: gcomp
+    type(model_type)   , intent(inout) :: model
+    integer            , intent(out)   :: rc
 
     ! local variables
-    integer            :: localPet
-    type(ESMF_VM)      :: vm
+    type(ESMF_VM)           :: vm
+    integer                 :: localPet
     character(len=*), parameter :: subname=trim(modName)//':(NoahmpDriverInit) '
     !-------------------------------------------------------------------------
 
@@ -95,24 +98,25 @@ contains
     !call NoahmpReadTable(model)
 
     ! ----------------------
-    ! Allocate and initialize noahmp model data
+    ! Read ststic information
     ! ----------------------
 
-    !call InitNoahMP(model, model%domain%begl, model%domain%endl)
+    call ReadStatic(model, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-
-    ! get coupling time step 
-    !call ESMF_TimeIntervalGet(timeStep, s_r8=noahmp%static%delt, rc=rc)
-    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    ! ----------------------
+    ! Setup data structures to write model output
+    ! ----------------------
 
     ! history
-    !call SetupWriteFields(model, 'hist', rc=rc)
-    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call SetupWriteFields(model, 'hist', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     ! restart
-    !call SetupWriteFields(model, 'rest', rc=rc)
-    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    call SetupWriteFields(model, 'rest', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
+    call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine NoahmpDriverInit
 
@@ -130,7 +134,7 @@ contains
     integer                 :: year, month, day
     integer                 :: hour, minute, second
     logical, save           :: first_time = .true.
-    real(ESMF_KIND_R8)      :: now_time
+    real(ESMF_KIND_R8)      :: now_time, dofy
     character(len=cl)       :: filename
     type(ESMF_VM)           :: vm
     type(ESMF_Clock)        :: clock
@@ -145,7 +149,7 @@ contains
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
     !----------------------
-    ! Query component
+    ! Query component clock and extract required information for model run
     !----------------------
 
     call ESMF_GridCompGet(gcomp, vm=vm, clock=clock, rc=rc)
@@ -154,12 +158,57 @@ contains
     call ESMF_ClockGet(clock, startTime=startTime, currTime=currTime, timeStep=timeStep, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
-    if (firstTime) then
-    ! history
-    call SetupWriteFields(model, 'hist', rc=rc)
+    call ESMF_TimeGet(currTime, yy=year, mm=month, dd=day, &
+      h=hour, m=minute, s=second, dayOfYear_r8=dofy, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    firstTime = .false.
+
+    ! ----------------------
+    ! Set model specific parameters
+    ! ----------------------
+
+    ! use coupling time step and internal time step of model
+    call ESMF_TimeIntervalGet(timeStep, s_r8=model%coupling%MainTimeStep, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! number of days in the particular year
+    model%noahmp%config%domain%NumDayInYear = 365
+    if (ESMF_TimeIsLeapYear(currTime, rc=rc)) then
+       model%noahmp%config%domain%NumDayInYear = 366
     end if
+
+    ! Julian day of year
+    model%noahmp%config%domain%DayJulianInYear = dofy
+
+    ! cosine solar zenith angle (0-1)
+    call CalcCosZ(currTime, model%domain%latm, model%domain%lonm, model%coupling%CosSolarZenithAngle, dofy, rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! main NoahMP model time step
+    model%noahmp%config%domain%MainTimeStep = model%coupling%MainTimeStep
+
+    ! set surface type (1 - soil and 2 - lake)
+    model%noahmp%config%domain%SurfaceType = 1
+
+    ! number of shortwave radiation bands
+    model%noahmp%config%domain%NumSwRadBand = 2
+
+    ! number of crop growth stages
+    model%noahmp%config%domain%NumCropGrowStage = 8
+
+    ! model grid spacing size
+    ! TODO: maybe this could be calculated from grid area?
+    model%noahmp%config%domain%GridSize = -9999.0
+
+    ! thickness of lowest atmosphere layer
+    ! TODO: namelist option? or retrieved from active atmosphere
+    model%noahmp%config%domain%ThicknessAtmosBotLayer = -9999.0
+
+!    if (firstTime) then
+!    ! history
+!    call SetupWriteFields(model, 'hist', rc=rc)
+!    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+!    firstTime = .false.
+!    end if
 
     ! restart
     !call SetupWriteFields(model, 'rest', rc=rc)
@@ -169,7 +218,16 @@ contains
     ! Loop over grid points and run NoahMP model
     ! ----------------------
 
-    !do i = model%domain%begl, model%domain%endl
+    do i = model%domain%begl, model%domain%endl
+       ! ----------------------
+       ! Set domain specific model parameters
+       ! ----------------------
+
+       model%noahmp%config%domain%GridIndexI          = i
+       model%noahmp%config%domain%GridIndexJ          = -9999
+       model%noahmp%config%domain%Latitude            = model%domain%latm(i)
+       model%noahmp%config%domain%CosSolarZenithAngle = model%coupling%CosSolarZenithAngle(i)
+       model%noahmp%config%domain%SoilType(:)         = model%coupling%SoilType(i)
 
     !   ! ----------------------
     !   ! Skip any open water points
@@ -209,7 +267,7 @@ contains
     !   ! Transfer 1-D Noah-MP column variables to model variables
     !   ! ----------------------
 
-    !end do
+    end do
 
     ! ----------------------
     ! Write model output and restart files
@@ -390,17 +448,80 @@ contains
     model%noahmp%forcing%PressureAirRefHeight    = model%forcing%PressureAirRefHeight   (indx) 
     model%noahmp%forcing%PressureAirSurface      = model%forcing%PressureAirSurface     (indx) 
 
-    model%noahmp%forcing%PrecipConvRefHeight     = model%forcing%PrecipConvRefHeight    (indx) / model%coupling%dt 
-    model%noahmp%forcing%PrecipNonConvRefHeight  = model%forcing%PrecipNonConvRefHeight (indx) / model%coupling%dt 
-    model%noahmp%forcing%PrecipShConvRefHeight   = model%forcing%PrecipShConvRefHeight  (indx) / model%coupling%dt 
-    model%noahmp%forcing%PrecipSnowRefHeight     = model%forcing%PrecipSnowRefHeight    (indx) / model%coupling%dt 
-    model%noahmp%forcing%PrecipGraupelRefHeight  = model%forcing%PrecipGraupelRefHeight (indx) / model%coupling%dt 
-    model%noahmp%forcing%PrecipHailRefHeight     = model%forcing%PrecipHailRefHeight    (indx) / model%coupling%dt 
+    model%noahmp%forcing%PrecipConvRefHeight     = model%forcing%PrecipConvRefHeight    (indx) / model%coupling%MainTimeStep 
+    model%noahmp%forcing%PrecipNonConvRefHeight  = model%forcing%PrecipNonConvRefHeight (indx) / model%coupling%MainTimeStep
+    model%noahmp%forcing%PrecipShConvRefHeight   = model%forcing%PrecipShConvRefHeight  (indx) / model%coupling%MainTimeStep
+    model%noahmp%forcing%PrecipSnowRefHeight     = model%forcing%PrecipSnowRefHeight    (indx) / model%coupling%MainTimeStep 
+    model%noahmp%forcing%PrecipGraupelRefHeight  = model%forcing%PrecipGraupelRefHeight (indx) / model%coupling%MainTimeStep
+    model%noahmp%forcing%PrecipHailRefHeight     = model%forcing%PrecipHailRefHeight    (indx) / model%coupling%MainTimeStep
 
     ! TODO: treat other precipitation (e.g. fog) contained in total precipitation
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine ForcingVarInTransfer
+
+  !===============================================================================
+
+  subroutine CalcCosZ(currTime, lat, long, cosz, julian, rc)
+    implicit none
+
+    ! input/output variables
+    type(ESMF_Time), intent(in) :: currTime
+    real(r8), intent(in)        :: lat(:)
+    real(r8), intent(in)        :: long(:)
+    real(r8), intent(inout)     :: cosz(:)
+    real(r8), intent(inout)     :: julian
+    integer, intent(inout)      :: rc
+
+    ! local variables
+    real(r8)                    :: sec_since
+    real(r8)                    :: obecl, sinob, sxlong, arg, tloctim, hrang, declin
+    integer                     :: iloc, iyear, imonth, iday, ihour, iminute, isecond
+    real(r8), parameter         :: degrad = 3.14159265/180.0
+    real(r8), parameter         :: dpd    = 360.0/365.0
+    character(len=*), parameter :: subname=trim(modName)//':(CalcCosZ) '
+    !-------------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+
+    !----------------------
+    ! query current time
+    !---------------------- 
+
+    call ESMF_TimeGet(currTime, yy=iyear, mm=imonth, dd=iday, h=ihour, m=iminute, s=isecond, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_TimeSet(dummTime, yy=iyear, mm=1, dd=1, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_TimeIntervalGet(currTime-dummTime, s_r8=sec_since, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! obliquity = 23.5 degree.
+    !----------------------
+
+    obecl = 23.5*degrad
+    sinob = sin(obecl)
+
+    !----------------------
+    ! calculate longitude of the sun from vernal equinox
+    !----------------------
+
+    julian = sec_since/86400.0
+    if (julian >= 80.0) sxlong = dpd*(julian-80.0)*degrad
+    if (julian <  80.0) sxlong = dpd*(julian+285.0)*degrad
+    arg = sinob*sin(sxlong)
+    declin = asin(arg)
+
+    do iloc = 1, size(lat)
+       tloctim = real(ihour)+real(iminute)/60.0+real(isecond)/3600.0+ long(iloc)/15.0 ! local time in hours
+       tloctim = mod(tloctim+24.0, 24.0)
+       hrang = 15.*(tloctim-12.0)*degrad
+       cosz(iloc) = sin(lat(iloc)*degrad)*sin(declin)+cos(lat(iloc)*degrad)*cos(declin)*cos(hrang)
+    end do
+
+  end subroutine CalcCosZ
 
 end module lnd_comp_driver

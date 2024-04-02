@@ -42,23 +42,33 @@ module lnd_comp_types
 
   ! data type for coupling
   type coupling_type
-     real(kind=r8) :: dt ! coupling time step
+     real(kind=r8)              :: MainTimeStep           ! coupling time step
+     real(kind=r8), allocatable :: CosSolarZenithAngle(:) ! cosine of solar zenith angle
+     integer      , allocatable :: SoilType           (:) ! soil type for each soil layer
+     integer      , allocatable :: VegType            (:) ! vegetation type 
+     integer      , allocatable :: RunoffSlopeType    (:) ! underground runoff slope term
   end type coupling_type
 
   ! data type for coupling level namelist options
   type namelist_type
      ! domain specific options
-     character(len=cl) :: scrip_file  ! name of SCRIP grid definition file 
-     character(len=cl) :: mosaic_file ! name of mosaic file
-     character(len=cl) :: input_dir   ! input directory for tiled files
-     logical           :: IsGlobal    ! global vs. regional, default is global
-
+     character(len=cl) :: scrip_file   ! name of SCRIP grid definition file 
+     character(len=cl) :: mosaic_file  ! name of mosaic file
+     character(len=cl) :: input_dir    ! input directory for tiled files
+     logical           :: IsGlobal     ! global vs. regional, default is global
+     ! soil specific options
+     integer                    :: NumSoilLayer      ! number of soil layers
+     real(kind=r8), allocatable :: DepthSoilLayer(:) ! layer-bottom depth from soil surface
+     ! input specific options
+     character(len=cl) :: InputType      ! input type for static fields and initial condition: sfc, custom
+     character(len=cl) :: InputSoilType  ! input file for soil type data
+     character(len=cl) :: InputVegType   ! input file for vegetation type data
+     character(len=cl) :: InputSlopeType ! input file for slope type 
      ! output specific options
      character(len=cl) :: OutputMode  ! model output mode: all, low or mid
      integer           :: OutputFreq  ! model output interval in seconds
-     logical           :: TransposeIO ! apply transpose to fields before write
-
-     character(len=cl) :: CaseName   ! name of case
+     ! generic options
+     character(len=cl) :: CaseName    ! name of case
      integer           :: debug_level ! debug level
   end type namelist_type
 
@@ -99,6 +109,7 @@ module lnd_comp_types
 
      procedure, public  :: AllocateInit
      procedure, private :: AllocateInitForcing
+     procedure, private :: AllocateInitCoupling
   end type model_type
 
   ! field type for I/O
@@ -149,6 +160,7 @@ contains
     !-------------------------------------------------------------------------
 
     call this%AllocateInitForcing(this%domain%begl, this%domain%endl)
+    call this%AllocateInitCoupling(this%domain%begl, this%domain%endl)
 
   end subroutine AllocateInit
 
@@ -194,6 +206,27 @@ contains
     this%forcing%PrecipHailRefHeight    (:) = undefined_real 
 
   end subroutine AllocateInitForcing
+
+  !===========================================================================
+
+  subroutine AllocateInitCoupling(this, begl, endl)
+
+    class(model_type) :: this
+    integer :: begl, endl
+
+    ! allocate
+    if (.not. allocated(this%coupling%CosSolarZenithAngle)) allocate(this%coupling%CosSolarZenithAngle(begl:endl))
+    if (.not. allocated(this%coupling%SoilType))            allocate(this%coupling%SoilType(begl:endl))
+    if (.not. allocated(this%coupling%VegType))             allocate(this%coupling%VegType(begl:endl))
+    if (.not. allocated(this%coupling%RunoffSlopeType))     allocate(this%coupling%RunoffSlopeType(begl:endl))
+
+    ! init
+    this%coupling%CosSolarZenithAngle(:) = undefined_real
+    this%coupling%SoilType(:)            = undefined_int
+    this%coupling%VegType(:)             = undefined_int
+    this%coupling%RunoffSlopeType(:)     = undefined_int
+
+  end subroutine AllocateInitCoupling
 
 end module lnd_comp_types
 

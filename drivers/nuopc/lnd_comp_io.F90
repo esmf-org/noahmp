@@ -42,6 +42,7 @@ module lnd_comp_io
 
   public :: GetNumTiles
   public :: ReadFile
+  public :: ReadStatic
   public :: SetupWriteFields
   public :: WriteFile
 
@@ -86,6 +87,210 @@ contains
     if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
 
   end function GetNumTiles
+
+  !===============================================================================
+
+  subroutine ReadStatic(model, rc)
+
+    ! input/output variables
+    type(model_type), target, intent(inout) :: model 
+    integer         ,         intent(inout) :: rc
+
+    ! local variables
+    type(field_type), allocatable :: flds(:)
+    real(r4), target, allocatable :: tmpr4(:)
+    real(r8), target, allocatable :: tmpr8(:)
+    real(r4), target, allocatable :: tmp2r4(:,:)
+    real(r8), target, allocatable :: tmp2r8(:,:)
+    character(len=CL)             :: filename
+    real(ESMF_KIND_R8), parameter :: pi_8 = 3.14159265358979323846_r8
+    character(len=*), parameter   :: subname=trim(modName)//':(ReadStatic) '
+    !-----------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
+
+    !----------------------
+    ! allocate temporary data structures
+    !----------------------
+
+    if (.not. allocated(tmpr4)) then
+       allocate(tmpr4(model%domain%begl:model%domain%endl))
+       tmpr4(:) = 0.0
+    end if
+
+    if (.not. allocated(tmpr8)) then
+       allocate(tmpr8(model%domain%begl:model%domain%endl))
+       tmpr8(:) = 0.0_r8
+    end if
+
+    if (.not. allocated(tmp2r4)) then
+       allocate(tmp2r4(model%domain%begl:model%domain%endl,12))
+       tmp2r4(:,:) = 0.0
+    end if
+
+    if (.not. allocated(tmp2r8)) then
+       allocate(tmp2r8(model%domain%begl:model%domain%endl,1))
+       tmp2r8(:,:) = 0.0_r8
+    end if
+
+    !----------------------
+    ! Set file name for sfc 
+    !----------------------
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       if (model%domain%ntiles == 1) then
+          filename = trim(model%nmlist%input_dir)//'sfc_data.nc'
+       else
+          filename = trim(model%nmlist%input_dir)//'sfc_data.tile*.nc'
+       end if
+    end if
+
+    !----------------------
+    ! Read soil type
+    !----------------------
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       allocate(flds(1))
+       flds(1)%short_name = 'stype'
+       flds(1)%ptr1r8 => tmpr8
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%SoilType = int(tmpr8)
+      deallocate(flds)
+    else
+       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSoilType)
+       allocate(flds(1))
+       flds(1)%short_name = 'soil_type'
+       flds(1)%ptr1r4 => tmpr4
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%SoilType = int(tmpr4)
+       deallocate(flds)
+    end if
+
+    !----------------------
+    ! Read vegetation type
+    !----------------------
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       allocate(flds(1))
+       flds(1)%short_name = 'vtype'
+       flds(1)%ptr1r8 => tmpr8
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%VegType = int(tmpr8)
+       deallocate(flds)
+    else
+       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputVegType)
+       allocate(flds(1))
+       flds(1)%short_name = 'vegetation_type'
+       flds(1)%ptr1r4 => tmpr4
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%VegType = int(tmpr4)
+       deallocate(flds)
+    end if
+
+    !----------------------
+    ! Read slope type
+    !----------------------
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       allocate(flds(1))
+       flds(1)%short_name = 'slope'
+       flds(1)%ptr1r8 => tmpr8
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%RunoffSlopeType = int(tmpr8)
+       deallocate(flds)
+    else
+       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSlopeType)
+       allocate(flds(1))
+       flds(1)%short_name = 'slope_type'
+       flds(1)%ptr1r4 => tmpr4
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%RunoffSlopeType = int(tmpr4)
+       deallocate(flds)
+    end if
+
+    !----------------------
+    ! Read deep soil temperature
+    !----------------------
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       allocate(flds(1))
+       flds(1)%short_name = 'tg3'
+       flds(1)%nrec = 1; flds(1)%ptr2r8 => tmp2r8
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%forcing%TemperatureSoilBottom = tmp2r8(:,1)
+       deallocate(flds)
+    !else
+    !   write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSlopeType)
+    !   allocate(flds(1))
+    !   flds(1)%short_name = 'substrate_temperature'
+    !   flds(1)%ptr1r4 => tmpr4
+    !   call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !   noahmp%model%tg3 = dble(tmpr4)
+    !   deallocate(flds)
+    end if
+
+    !----------------------
+    ! Read upper bound on max albedo over deep snow
+    !----------------------
+
+    !if (trim(noahmp%nmlist%ic_type) == 'sfc') then
+    !   allocate(flds(1))
+    !   flds(1)%short_name = 'snoalb'
+    !   flds(1)%nrec = 1; flds(1)%ptr2r8 => tmp2r8
+    !   call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !   model%coupling%AlbedoSnowPrev = tmp2r8(:,1)
+    !   deallocate(flds)
+    !else
+    !   allocate(flds(1))
+    !   flds(1)%short_name = 'maximum_snow_albedo'
+    !   flds(1)%ptr1r4 => tmpr4
+    !   call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !   noahmp%model%snoalb = dble(tmpr4)
+    !   deallocate(flds)
+    !end if
+
+    !----------------------
+    ! Read vegetation greenness, monthly average 
+    !----------------------
+
+    !allocate(flds(1))
+    !flds(1)%short_name = 'vegetation_greenness'
+    !flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
+    !call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !noahmp%model%gvf_monthly(:,:) = dble(tmp2r4)
+    !noahmp%model%shdmin(:) = minval(noahmp%model%gvf_monthly(:,:), dim=2)
+    !noahmp%model%shdmax(:) = maxval(noahmp%model%gvf_monthly(:,:), dim=2)
+    !deallocate(flds)
+
+    !----------------------
+    ! Soil color
+    !----------------------
+
+    !allocate(flds(1))
+    !write(filename, fmt="(A,I0,A)") trim(noahmp%nmlist%input_dir)//'C', noahmp%domain%ni, '.soil_color.tile*.nc'
+    !flds(1)%short_name = 'soil_color'
+    !flds(1)%ptr1r4 => tmpr4
+    !call read_tiled_file(noahmp, filename, flds, rc=rc)
+    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !noahmp%model%soilcol = int(tmpr4)
+    !deallocate(flds)
+
+
+    call ESMF_LogWrite(subname//' done for '//trim(filename), ESMF_LOGMSG_INFO)
+
+  end subroutine ReadStatic
 
   !===============================================================================
 
@@ -297,6 +502,15 @@ contains
     call ESMF_FieldBundleRead(FBgrid, fileName=trim(filename), rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
+    !do i = 1, size(flds)
+    !   ! get field from FB
+    !   call ESMF_FieldBundleGet(FBgrid, fieldName=trim(flds(i)%short_name), field=fgrid, rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !   call ESMF_FieldWriteVTK(fgrid, trim(flds(i)%short_name), rc=rc)
+    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    !end do
+
     !----------------------
     ! Create routehandle if it is not provided to transfer data from grid to mesh and move data
     !----------------------
@@ -312,7 +526,7 @@ contains
        end if
 
        ! move data from ESMF grid to mesh
-       call ESMF_FieldBundleRedist(FBgrid, FBmesh, rh_local, rc=rc)
+       call ESMF_FieldBundleRedist(FBgrid, FBmesh, rh_local, checkflag=.true., rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
 
@@ -351,7 +565,7 @@ contains
           end if
 
           ! write field to VTK file
-          if (model%nmlist%debug_level > 0) then
+          if (model%nmlist%debug_level > 10) then
              call ESMF_FieldWriteVTK(fmesh, trim(flds(i)%short_name), rc=rc)
              if (ChkErr(rc,__LINE__,u_FILE_u)) return
           end if
@@ -383,7 +597,7 @@ contains
           end if
  
           ! write field to VTK file, each record seperate file
-          if (model%nmlist%debug_level > 0) then
+          if (model%nmlist%debug_level > 10) then
              do j = 1, flds(i)%nrec
                 ! file name
                 write(fname, fmt='(A,I2.2)') trim(flds(i)%short_name)//'_rec_', j
@@ -868,6 +1082,12 @@ contains
           return
        end if
 
+       ! write data on mesh for debugging
+       !if (model%nmlist%debug_level > 10) then
+       !   call ESMF_FieldWriteVTK(fmesh, trim(outflds(i)%short_name), rc=rc)
+       !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       !end if
+
        ! add long_name and units attributes to the field on grid
        call ESMF_AttributeAdd(fgrid, convention="NetCDF", purpose="NOAHMP", attrList=(/'long_name'/), rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -961,7 +1181,7 @@ contains
     ! Move data from ESMF grid to mesh
     !----------------------
 
-    call ESMF_FieldBundleRedist(FBmesh, FBgrid, rh_local, rc=rc)
+    call ESMF_FieldBundleRedist(FBmesh, FBgrid, rh_local, checkflag=.true., rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     !----------------------
@@ -992,16 +1212,13 @@ contains
        call ESMF_FieldGet(fgrid, rank=rank, typekind=typekind, rc=rc)
        if (chkerr(rc,__LINE__,u_FILE_u)) return
 
-       ! apply mask and transpose
+       ! apply mask
        if (rank .eq. 2) then
           if (typekind == ESMF_TYPEKIND_R4) then
              call ESMF_FieldGet(fgrid, farrayPtr=ptr2r4, rc=rc)
              if (chkerr(rc,__LINE__,u_FILE_u)) return
              if (associated(ptrMask)) then
                 where(ptrMask < 1) ptr2r4 = missing_r4
-             end if
-             if (model%nmlist%TransposeIO) then
-                ptr2r4 = ptr2r4(lbound(ptr2r4, dim=1):ubound(ptr2r4, dim=1):-1,lbound(ptr2r4, dim=1):ubound(ptr2r4, dim=1):-1)
              end if
              nullify(ptr2r4)
           else if (typekind == ESMF_TYPEKIND_R8) then
@@ -1010,18 +1227,12 @@ contains
              if (associated(ptrMask)) then
                 where(ptrMask < 1) ptr2r8 = missing_r8
              end if
-             if (model%nmlist%TransposeIO) then
-                ptr2r8 = ptr2r8(lbound(ptr2r8, dim=1):ubound(ptr2r8, dim=1):-1,lbound(ptr2r8, dim=1):ubound(ptr2r8, dim=1):-1)
-             end if
              nullify(ptr2r8)
           else if (typekind == ESMF_TYPEKIND_I4) then
              call ESMF_FieldGet(fgrid, farrayPtr=ptr2i4, rc=rc)
              if (chkerr(rc,__LINE__,u_FILE_u)) return
              if (associated(ptrMask)) then
                 where(ptrMask < 1) ptr2i4 = missing_i4
-             end if
-             if (model%nmlist%TransposeIO) then
-                ptr2i4 = ptr2i4(lbound(ptr2i4, dim=1):ubound(ptr2i4, dim=1):-1,lbound(ptr2i4, dim=1):ubound(ptr2i4, dim=1):-1)
              end if
              nullify(ptr2i4)
           end if
@@ -1034,11 +1245,6 @@ contains
                    where(ptrMask < 1) ptr3r4(:,:,k) = missing_r4
                 end do
              end if
-             if (model%nmlist%TransposeIO) then
-                do k = 1, ubound(ptr3r4, dim=3)
-                   ptr3r4(:,:,k) = ptr3r4(::-1,::-1,k)
-                end do
-             end if
              nullify(ptr3r4)
           else if (typekind == ESMF_TYPEKIND_R8) then
              call ESMF_FieldGet(fgrid, farrayPtr=ptr3r8, rc=rc)
@@ -1046,11 +1252,6 @@ contains
              if (associated(ptrMask)) then
                 do k = 1, ubound(ptr3r8, dim=3)
                    where(ptrMask < 1) ptr3r8(:,:,k) = missing_r8
-                end do
-             end if
-             if (model%nmlist%TransposeIO) then
-                do k = 1, ubound(ptr3r8, dim=3)
-                   ptr3r8(:,:,k) = ptr3r8(::-1,::-1,k)
                 end do
              end if
              nullify(ptr3r8)
@@ -1062,11 +1263,6 @@ contains
                    where(ptrMask < 1) ptr3i4(:,:,k) = missing_i4
                 end do
              end if
-             if (model%nmlist%TransposeIO) then
-                do k = 1, ubound(ptr3i4, dim=3)
-                   ptr3i4(:,:,k) = ptr3i4(::-1,::-1,k)
-                end do
-             end if             
              nullify(ptr3i4)
           end if
        end if
@@ -1319,7 +1515,30 @@ contains
 
        ! mode = all
        if (trim(model%nmlist%OutputMode) == 'all') then
-          call FieldAdd('SpecHumidityRefHeight', 'specific humidity at reference height', 'kg/kg', histflds, ptr1r8=model%forcing%SpecHumidityRefHeight)
+          ! forcing fields
+          call FieldAdd('SpecHumidityRefHeight'  , 'specific humidity at reference height'                    , 'kg/kg'   , histflds, ptr1r8=model%forcing%SpecHumidityRefHeight)
+          call FieldAdd('TemperatureAirRefHeight', 'air temperature at reference height'                      , 'K'       , histflds, ptr1r8=model%forcing%TemperatureAirRefHeight)
+          call FieldAdd('WindEastwardRefHeight'  , 'wind speed in eastward direction at reference height'     , 'm s-1'   , histflds, ptr1r8=model%forcing%WindEastwardRefHeight)
+          call FieldAdd('WindNorthwardRefHeight' , 'wind speed in northward direction at reference height'    , 'm s-1'   , histflds, ptr1r8=model%forcing%WindNorthwardRefHeight)
+          call FieldAdd('TemperatureSoilBottom'  , 'bottom boundary condition for soil temperature'           , 'K'       , histflds, ptr1r8=model%forcing%TemperatureSoilBottom)
+          call FieldAdd('RadSwDownRefHeight'     , 'downward shortwave radiation at reference height'         , 'W m-2'   , histflds, ptr1r8=model%forcing%RadSwDownRefHeight)
+          call FieldAdd('RadLwDownRefHeight'     , 'downward longwave radiation at reference height'          , 'W m-2'   , histflds, ptr1r8=model%forcing%RadLwDownRefHeight)
+          call FieldAdd('PressureAirRefHeight'   , 'air pressure at reference height'                         , 'Pa'      , histflds, ptr1r8=model%forcing%PressureAirRefHeight)
+          call FieldAdd('PressureAirSurface'     , 'air pressure at the surface-atmosphere interface level'   , 'Pa'      , histflds, ptr1r8=model%forcing%PressureAirSurface)
+          call FieldAdd('PrecipConvRefHeight'    , 'convective precipitation rate at reference height'        , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipConvRefHeight)
+          call FieldAdd('PrecipNonConvRefHeight' , 'non-convective precipitation rate at reference height'    , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipNonConvRefHeight)
+          call FieldAdd('PrecipShConvRefHeight'  , 'shallow convective precipitation rate at reference height', 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipShConvRefHeight)
+          call FieldAdd('PrecipSnowRefHeight'    , 'snow rate at reference height'                            , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipSnowRefHeight)
+          call FieldAdd('PrecipGraupelRefHeight' , 'graupel rate at reference height'                         , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipGraupelRefHeight)
+          call FieldAdd('PrecipHailRefHeight'    , 'hail rate at reference height'                            , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipHailRefHeight)
+
+          ! static fields
+          !call FieldAdd('SoilType'               , 'soil type for each soil layer'                            , 'unitless', histflds, ptr1i4=model%coupling%SoilType)
+          !call FieldAdd('VegType'                , 'vegetation type'                                          , 'unitless', histflds, ptr1i4=model%coupling%VegType)
+          !call FieldAdd('RunoffSlopeType'        , 'underground runoff slope term'                            , 'unitless', histflds, ptr1i4=model%coupling%RunoffSlopeType)
+
+          ! other fields
+          call FieldAdd('CosSolarZenithAngle'    , 'cosine solar zenith angle'                                , '1'       , histflds, ptr1r8=model%coupling%CosSolarZenithAngle)
 
        ! mode = mid
        else if (trim(model%nmlist%OutputMode) == 'mid') then

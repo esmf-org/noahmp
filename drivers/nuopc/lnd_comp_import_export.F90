@@ -292,9 +292,9 @@ contains
     !if (ChkErr(rc,__LINE__,u_FILE_u)) return
     call StateGetImport(importState, 'Sa_ta'     , model%forcing%TemperatureAirRefHeight, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    call StateGetImport(importState, 'Sa_tbot'   , model%forcing%TemperatureSoilBottom, rc=rc)
+    call StateGetImport(importState, 'Sa_tbot'   , model%forcing%TemperatureAirRefHeight, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    call StateGetImport(importState, 'Sa_tskn'   , model%forcing%TemperatureAirRefHeight, rc=rc)
+    call StateGetImport(importState, 'Sa_tskn'   , model%forcing%TemperatureSoilBottom, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     !call StateGetImport(importState, 'Sa_prsl'   , model%forc%t, rc=rc)
     !if (ChkErr(rc,__LINE__,u_FILE_u)) return

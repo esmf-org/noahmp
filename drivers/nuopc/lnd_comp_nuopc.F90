@@ -6,7 +6,7 @@ module lnd_comp_nuopc
 
   use ESMF             , only: operator(+), operator(-), operator(==)
   use ESMF             , only: ESMF_GridCompSetEntryPoint, ESMF_GridComp
-  use ESMF             , only: ESMF_GridCompGet, ESMF_VMGet, ESMF_Mesh, ESMF_MeshWriteVTK
+  use ESMF             , only: ESMF_GridCompGet, ESMF_VMGet, ESMF_Mesh
   use ESMF             , only: ESMF_MethodRemove, ESMF_LogWrite, ESMF_LOGMSG_INFO
   use ESMF             , only: ESMF_METHOD_INITIALIZE, ESMF_SUCCESS, ESMF_FAILURE
   use ESMF             , only: ESMF_State, ESMF_Clock, ESMF_Time, ESMF_VM
@@ -185,14 +185,6 @@ contains
 
     call SetDomain(gcomp, model, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
-
-    ! check mesh for debugging purposes
-    if (model%nmlist%debug_level > 2) then
-       if (model%domain%ntiles == 1) then
-          call ESMF_MeshWriteVTK(model%domain%mesh, "lnd_mesh", rc=rc)
-          if (ChkErr(rc,__LINE__,u_FILE_u)) return
-       end if
-    end if
 
     !----------------------
     ! Initialize NoahMP

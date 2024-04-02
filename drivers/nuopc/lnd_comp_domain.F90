@@ -17,10 +17,12 @@ module lnd_comp_domain
   use ESMF, only: ESMF_GridCreate, ESMF_GridGetCoord, ESMF_INDEX_DELOCAL
   use ESMF, only: ESMF_GridCreateNoPeriDim, ESMF_COORDSYS_SPH_RAD
   use ESMF, only: ESMF_FAILURE, ESMF_FILEFORMAT_SCRIP
+  use ESMF, only: ESMF_GridWriteVTK, ESMF_MeshWriteVTK
+  use ESMF, only: ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER
+  use ESMF, only: ESMF_GridGetCoord
 
   use lnd_comp_shr  , only: ChkErr
   use lnd_comp_shr  , only: ChkErrNc
-  use lnd_comp_shr  , only: FieldRead
   use lnd_comp_types, only: model_type
   use lnd_comp_types, only: field_type
   use lnd_comp_types, only: iMosaic, iScrip
@@ -56,6 +58,8 @@ contains
     type(model_type), intent(inout) :: model
     integer, intent(out)            :: rc
 
+    ! local variables
+    logical :: isPresent
     character(len=*), parameter         :: subname = trim(modName)//':(SetDomain) '
     !---------------------------------------------------------------------------
 
@@ -71,10 +75,32 @@ contains
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
     end if
 
-    ! check mesh for debugging purposes
-    if (model%nmlist%debug_level > 2) then
+    ! write mesh and grid for debugging purposes
+    if (model%nmlist%debug_level > 10) then
+       ! write mesh
        call ESMF_MeshWriteVTK(model%domain%mesh, "lnd_mesh", rc=rc)
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+       ! write grid
+       if (model%domain%ntiles == 1) then
+          ! check center coordinates
+          call ESMF_GridGetCoord(model%domain%grid, staggerLoc=ESMF_STAGGERLOC_CENTER, isPresent=isPresent, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          if (isPresent) then
+             call ESMF_GridWriteVTK(model%domain%grid, filename="lnd_grid_center", staggerLoc=ESMF_STAGGERLOC_CENTER, rc=rc)
+             if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          end if
+
+          ! check corner coordinates 
+          call ESMF_GridGetCoord(model%domain%grid, staggerLoc=ESMF_STAGGERLOC_CORNER, isPresent=isPresent, rc=rc)
+          if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+          if (isPresent) then
+             call ESMF_GridWriteVTK(model%domain%grid, filename="lnd_grid_corner", staggerLoc=ESMF_STAGGERLOC_CORNER, rc=rc)
+             if (ChkErr(rc,__LINE__,u_FILE_u)) return
+          end if
+       end if
     end if
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
@@ -363,6 +389,9 @@ contains
     end if
     model%domain%latg(:,:) = ptr2d(:,:)
     nullify(ptr2d)
+
+    ! set number of tiles
+    model%domain%ntiles = 1
 
     ! ---------------------
     ! Convert ESMF grid to mesh 
