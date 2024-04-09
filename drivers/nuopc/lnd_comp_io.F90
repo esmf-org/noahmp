@@ -43,6 +43,7 @@ module lnd_comp_io
   public :: GetNumTiles
   public :: ReadFile
   public :: ReadStatic
+  public :: ReadIC
   public :: SetupWriteFields
   public :: WriteFile
 
@@ -103,7 +104,6 @@ contains
     real(r4), target, allocatable :: tmp2r4(:,:)
     real(r8), target, allocatable :: tmp2r8(:,:)
     character(len=CL)             :: filename
-    real(ESMF_KIND_R8), parameter :: pi_8 = 3.14159265358979323846_r8
     character(len=*), parameter   :: subname=trim(modName)//':(ReadStatic) '
     !-----------------------------------------------------------------------------
 
@@ -227,15 +227,15 @@ contains
        if (ChkErr(rc,__LINE__,u_FILE_u)) return
        model%forcing%TemperatureSoilBottom = tmp2r8(:,1)
        deallocate(flds)
-    !else
-    !   write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSlopeType)
-    !   allocate(flds(1))
-    !   flds(1)%short_name = 'substrate_temperature'
-    !   flds(1)%ptr1r4 => tmpr4
-    !   call read_tiled_file(noahmp, filename, flds, rc=rc)
-    !   if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !   noahmp%model%tg3 = dble(tmpr4)
-    !   deallocate(flds)
+    else
+       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputBottomTemp)
+       allocate(flds(1))
+       flds(1)%short_name = 'substrate_temperature'
+       flds(1)%ptr1r4 => tmpr4
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%forcing%TemperatureSoilBottom = dble(tmpr4)
+       deallocate(flds)
     end if
 
     !----------------------
@@ -264,15 +264,14 @@ contains
     ! Read vegetation greenness, monthly average 
     !----------------------
 
-    !allocate(flds(1))
-    !flds(1)%short_name = 'vegetation_greenness'
-    !flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
-    !call read_tiled_file(noahmp, filename, flds, rc=rc)
-    !if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    !noahmp%model%gvf_monthly(:,:) = dble(tmp2r4)
-    !noahmp%model%shdmin(:) = minval(noahmp%model%gvf_monthly(:,:), dim=2)
-    !noahmp%model%shdmax(:) = maxval(noahmp%model%gvf_monthly(:,:), dim=2)
-    !deallocate(flds)
+    write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputVegFracAnnMax)
+    allocate(flds(1))
+    flds(1)%short_name = 'vegetation_greenness'
+    flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
+    call ReadFile(model, filename, flds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    model%coupling%VegFracAnnMax(:) = maxval(dble(tmp2r4(:,:)), dim=2)
+    deallocate(flds)
 
     !----------------------
     ! Soil color
@@ -287,10 +286,97 @@ contains
     !noahmp%model%soilcol = int(tmpr4)
     !deallocate(flds)
 
-
     call ESMF_LogWrite(subname//' done for '//trim(filename), ESMF_LOGMSG_INFO)
 
   end subroutine ReadStatic
+
+  !===============================================================================
+
+  subroutine ReadIC(model, rc)
+
+    ! input/output variables
+    type(model_type), target, intent(inout) :: model
+    integer         ,         intent(inout) :: rc
+
+    ! local variables
+    type(field_type), allocatable :: flds(:)
+    character(len=CL)             :: filename
+    character(len=*), parameter   :: subname=trim(modName)//':(ReadIC) '
+    !-----------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
+
+    !----------------------
+    ! Read information from input file
+    !----------------------
+
+    write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputIC)
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+
+    else
+       !----------------------
+       ! Allocate field list
+       !----------------------
+
+       allocate(flds(3))
+
+       !----------------------
+       ! Snow albedo at last time step (CLASS type), CanopyTotalWater
+       !----------------------
+
+       !----------------------
+       ! Surface skin temperature
+       !----------------------
+
+       !----------------------
+       ! Water equivalent accumulated snow depth
+       !----------------------
+
+       flds(1)%short_name = 'snow_water_equivalent'
+       flds(1)%ptr1r8 => model%coupling%SnowWaterEquiv
+
+       !----------------------
+       ! Snow depth
+       !----------------------
+
+       flds(2)%short_name = 'snow_depth'
+       flds(2)%ptr1r8 => model%coupling%SnowDepth
+
+       !----------------------
+       ! Surface soil temperature
+       !----------------------
+
+       !flds(3)%short_name = 'soil_temperature'
+       !flds(3)%nrec = model%noahmp%config%domain%NumSoilLayer
+       !flds(3)%ptr2r8 => model%coupling%TemperatureSoilSnow
+
+       !----------------------
+       ! Surface soil moisture
+       !----------------------
+
+       flds(3)%short_name = 'soil_moisture'
+       flds(3)%nrec = model%noahmp%config%domain%NumSoilLayer
+       flds(3)%ptr2r8 => model%coupling%SoilMoisture
+    end if
+
+    !----------------------
+    ! Read data 
+    !----------------------
+
+    call ReadFile(model, filename, flds, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    !----------------------
+    ! Clean memory
+    !----------------------
+
+    if (allocated(flds)) deallocate(flds)
+
+    call ESMF_LogWrite(subname//' done for '//trim(filename), ESMF_LOGMSG_INFO)
+
+  end subroutine ReadIC
 
   !===============================================================================
 
@@ -308,10 +394,10 @@ contains
     ! local variables
     logical                     :: amask, transfer_flag
     integer                     :: i, j, k, rank, fieldCount
-    integer, pointer            :: ptr1i4(:)
+    integer , pointer           :: ptr1i4(:)
     real(r4), pointer           :: ptr1r4(:)
     real(r8), pointer           :: ptr1r8(:)
-    integer, pointer            :: ptr2i4(:,:)
+    integer , pointer           :: ptr2i4(:,:)
     real(r4), pointer           :: ptr2r4(:,:)
     real(r8), pointer           :: ptr2r8(:,:)
     type(ESMF_RouteHandle)      :: rh_local
@@ -927,10 +1013,10 @@ contains
 
        ! set size and name of z-axis
        nlev = 0
-       !if (trim(outflds(i)%zaxis) == "z") then
-       !   nlev = size(noahmp%nmlist%soil_level_nodes)
-       !   zaxis_name = "soil_levels"
-       !   flag_soil_levels = .true.
+       if (trim(outflds(i)%zaxis) == "z") then
+          nlev = model%noahmp%config%domain%NumSoilLayer
+          zaxis_name = "soil_levels"
+          flag_soil_levels = .true.
        !else if (trim(outflds(i)%zaxis) == "z1") then
        !   nlev = abs(noahmp%static%lsnowl)+1
        !   zaxis_name = "snow_levels"
@@ -939,7 +1025,7 @@ contains
        !   nlev = size(noahmp%nmlist%soil_level_nodes)+abs(noahmp%static%lsnowl)+1
        !   zaxis_name = "snso_levels"
        !   flag_snso_levels = .true.
-       !end if
+       end if
 
        ! 2d/r8 field (x,y)
        if (associated(outflds(i)%ptr1r8)) then
@@ -1362,8 +1448,8 @@ contains
              if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
 
              ! add value to soil levels
-             !ncerr = nf90_put_var(ncid, varid, values=model%nmlist%soil_level_nodes)
-             !if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
+             ncerr = nf90_put_var(ncid, varid, values=model%noahmp%config%domain%DepthSoilLayer)
+             if (ChkErrNc(ncerr,__LINE__,u_FILE_u)) return
           end if
 
           !----------------------
@@ -1533,12 +1619,18 @@ contains
           call FieldAdd('PrecipHailRefHeight'    , 'hail rate at reference height'                            , 'mm s-1'  , histflds, ptr1r8=model%forcing%PrecipHailRefHeight)
 
           ! static fields
-          !call FieldAdd('SoilType'               , 'soil type for each soil layer'                            , 'unitless', histflds, ptr1i4=model%coupling%SoilType)
-          !call FieldAdd('VegType'                , 'vegetation type'                                          , 'unitless', histflds, ptr1i4=model%coupling%VegType)
-          !call FieldAdd('RunoffSlopeType'        , 'underground runoff slope term'                            , 'unitless', histflds, ptr1i4=model%coupling%RunoffSlopeType)
+          call FieldAdd('SoilType'               , 'soil type for each soil layer'                            , 'unitless', histflds, ptr1i4=model%coupling%SoilType)
+          call FieldAdd('VegType'                , 'vegetation type'                                          , 'unitless', histflds, ptr1i4=model%coupling%VegType)
+          call FieldAdd('RunoffSlopeType'        , 'underground runoff slope term'                            , 'unitless', histflds, ptr1i4=model%coupling%RunoffSlopeType)
+          call FieldAdd('VegFracAnnMax'          , 'annual max vegetation fraction'                           , 'unitless', histflds, ptr1r8=model%coupling%VegFracAnnMax)
+          call FieldAdd('SnowWaterEquiv'         , 'snow water equivalent'                                    , 'mm'      , histflds, ptr1r8=model%coupling%SnowWaterEquiv)
+          call FieldAdd('SnowDepth'              , 'snow depth'                                               , 'mm'      , histflds, ptr1r8=model%coupling%SnowDepth)
 
           ! other fields
           call FieldAdd('CosSolarZenithAngle'    , 'cosine solar zenith angle'                                , '1'       , histflds, ptr1r8=model%coupling%CosSolarZenithAngle)
+
+          ! 3d fields
+          call FieldAdd('SoilMoisture'           , 'soil moisture'                                            , 'm3/m3'   , histflds, ptr2r8=model%coupling%SoilMoisture, zaxis="z")
 
        ! mode = mid
        else if (trim(model%nmlist%OutputMode) == 'mid') then

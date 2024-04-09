@@ -27,6 +27,7 @@ module lnd_comp_nuopc
   use NUOPC_Model      , only: SetVM
   use NUOPC_Model      , only: model_label_Advance => label_Advance
   use NUOPC_Model      , only: model_label_SetRunClock => label_SetRunClock
+  use NUOPC_Model      , only: model_label_Finalize => label_Finalize
 
   use lnd_comp_domain  , only: SetDomain 
   use lnd_comp_shr     , only: ChkErr
@@ -103,6 +104,12 @@ contains
     call NUOPC_CompSpecialize(gcomp, specLabel=model_label_SetRunClock, &
          specRoutine=ModelSetRunClock, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call NUOPC_CompSpecialize(gcomp, specLabel=model_label_Finalize, &
+         specRoutine=ModelFinalize, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine SetServices
 
@@ -316,5 +323,26 @@ contains
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
   end subroutine ModelSetRunClock
+
+  !===============================================================================
+
+  subroutine ModelFinalize(gcomp, rc)
+
+    type(ESMF_GridComp)  :: gcomp
+    integer, intent(out) :: rc
+
+    ! local variables
+    character(len=*),parameter :: subname=trim(modName)//':(ModelFinalize) '
+    !-------------------------------------------------------------------------------
+
+    rc = ESMF_SUCCESS
+    call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
+
+    ! call model finalize routine
+    !call e(gcomp, noahmp, rc)
+
+    call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
+
+  end subroutine ModelFinalize
 
 end module lnd_comp_nuopc

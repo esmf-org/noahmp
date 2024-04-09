@@ -20,6 +20,7 @@ module lnd_comp_driver
   use lnd_comp_io, only: SetupWriteFields
   use lnd_comp_io, only: WriteFile
   use lnd_comp_io, only: ReadStatic
+  use lnd_comp_io, only: ReadIC
 
   use ConfigVarInitMod , only: ConfigVarInitDefault
   use ForcingVarInitMod, only: ForcingVarInitDefault
@@ -98,11 +99,22 @@ contains
     !call NoahmpReadTable(model)
 
     ! ----------------------
-    ! Read ststic information
+    ! Read static information
     ! ----------------------
 
     call ReadStatic(model, rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    ! ---------------------
+    ! Read initial condition / restart file
+    ! ---------------------
+
+    if (model%nmlist%IsRestart) then
+    !   call ReadRestart()
+    else
+       call ReadIC(model, rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+    end if
 
     ! ----------------------
     ! Setup data structures to write model output
@@ -223,11 +235,20 @@ contains
        ! Set domain specific model parameters
        ! ----------------------
 
-       model%noahmp%config%domain%GridIndexI          = i
-       model%noahmp%config%domain%GridIndexJ          = -9999
-       model%noahmp%config%domain%Latitude            = model%domain%latm(i)
-       model%noahmp%config%domain%CosSolarZenithAngle = model%coupling%CosSolarZenithAngle(i)
-       model%noahmp%config%domain%SoilType(:)         = model%coupling%SoilType(i)
+       model%noahmp%config%domain%GridIndexI            = i
+       model%noahmp%config%domain%GridIndexJ            = -9999
+       model%noahmp%config%domain%Latitude              = model%domain%latm(i)
+       model%noahmp%config%domain%CosSolarZenithAngle   = model%coupling%CosSolarZenithAngle(i)
+       model%noahmp%config%domain%SoilType(:)           = model%coupling%SoilType(i)
+       model%noahmp%config%domain%VegType               = model%coupling%VegType(i)
+       model%noahmp%config%domain%RunoffSlopeType       = model%coupling%RunoffSlopeType(i)
+
+       model%noahmp%energy%param%VegFracAnnMax          = model%coupling%VegFracAnnMax(i)
+       model%noahmp%energy%state%TemperatureSoilSnow(:) = model%coupling%TemperatureSoilSnow(i,:)
+       
+       model%noahmp%water%state%SoilMoisture(:)         = model%coupling%SoilMoisture(i,:)
+       model%noahmp%water%state%SnowWaterEquiv          = model%coupling%SnowWaterEquiv(i)
+       model%noahmp%water%state%SnowDepth               = model%coupling%SnowDepth(i)
 
     !   ! ----------------------
     !   ! Skip any open water points

@@ -42,11 +42,16 @@ module lnd_comp_types
 
   ! data type for coupling
   type coupling_type
-     real(kind=r8)              :: MainTimeStep           ! coupling time step
-     real(kind=r8), allocatable :: CosSolarZenithAngle(:) ! cosine of solar zenith angle
-     integer      , allocatable :: SoilType           (:) ! soil type for each soil layer
-     integer      , allocatable :: VegType            (:) ! vegetation type 
-     integer      , allocatable :: RunoffSlopeType    (:) ! underground runoff slope term
+     real(kind=r8)              :: MainTimeStep             ! coupling time step
+     real(kind=r8), allocatable :: CosSolarZenithAngle(:)   ! cosine of solar zenith angle
+     integer      , allocatable :: SoilType           (:)   ! soil type for each soil layer
+     integer      , allocatable :: VegType            (:)   ! vegetation type 
+     integer      , allocatable :: RunoffSlopeType    (:)   ! underground runoff slope term
+     real(kind=r8), allocatable :: VegFracAnnMax      (:)   ! annual max vegetation fraction
+     real(kind=r8), allocatable :: SoilMoisture       (:,:) ! soil moisture (ice + liq.)
+     real(kind=r8), allocatable :: TemperatureSoilSnow(:,:) ! snow/soil temperature, K
+     real(kind=r8), allocatable :: SnowDepth          (:)   ! snow depth [mm]
+     real(kind=r8), allocatable :: SnowWaterEquiv     (:)   ! snow water equivalent (ice+liquid) [mm]
   end type coupling_type
 
   ! data type for coupling level namelist options
@@ -57,19 +62,24 @@ module lnd_comp_types
      character(len=cl) :: input_dir    ! input directory for tiled files
      logical           :: IsGlobal     ! global vs. regional, default is global
      ! soil specific options
-     integer                    :: NumSoilLayer      ! number of soil layers
-     real(kind=r8), allocatable :: DepthSoilLayer(:) ! layer-bottom depth from soil surface
+!     integer                    :: NumSoilLayer      ! number of soil layers
+!     real(kind=r8), allocatable :: DepthSoilLayer(:) ! layer-bottom depth from soil surface
      ! input specific options
-     character(len=cl) :: InputType      ! input type for static fields and initial condition: sfc, custom
-     character(len=cl) :: InputSoilType  ! input file for soil type data
-     character(len=cl) :: InputVegType   ! input file for vegetation type data
-     character(len=cl) :: InputSlopeType ! input file for slope type 
+     character(len=cl) :: InputType          ! input type for static fields and initial condition: sfc, custom
+     character(len=cl) :: InputIC            ! input file for initial condition or restart 
+     character(len=cl) :: InputSoilType      ! input file for soil type data
+     character(len=cl) :: InputVegType       ! input file for vegetation type data
+     character(len=cl) :: InputSlopeType     ! input file for slope type 
+     character(len=cl) :: InputBottomTemp    ! input file for bottom temperature
+     character(len=cl) :: InputVegFracAnnMax ! input file annual max vegetation fraction
      ! output specific options
      character(len=cl) :: OutputMode  ! model output mode: all, low or mid
      integer           :: OutputFreq  ! model output interval in seconds
      ! generic options
      character(len=cl) :: CaseName    ! name of case
      integer           :: debug_level ! debug level
+     character(len=cl) :: RestartType ! flag for restart run
+     logical           :: IsRestart   ! flag if the run is restart or not
   end type namelist_type
 
   ! data type for forcing
@@ -159,8 +169,15 @@ contains
     class(model_type) :: this 
     !-------------------------------------------------------------------------
 
-    call this%AllocateInitForcing(this%domain%begl, this%domain%endl)
-    call this%AllocateInitCoupling(this%domain%begl, this%domain%endl)
+    associate(begl  => this%domain%begl, &
+              endl  => this%domain%endl, &
+              nsoil => this%noahmp%config%domain%NumSoilLayer, &
+              nsnow => this%noahmp%config%domain%NumSnowLayerMax)
+
+    call this%AllocateInitForcing(begl, endl)
+    call this%AllocateInitCoupling(begl, endl, nsoil, nsnow)
+
+    end associate
 
   end subroutine AllocateInit
 
@@ -209,22 +226,32 @@ contains
 
   !===========================================================================
 
-  subroutine AllocateInitCoupling(this, begl, endl)
+  subroutine AllocateInitCoupling(this, begl, endl, nsnow, nsoil)
 
     class(model_type) :: this
-    integer :: begl, endl
+    integer :: begl, endl, nsnow, nsoil
 
     ! allocate
     if (.not. allocated(this%coupling%CosSolarZenithAngle)) allocate(this%coupling%CosSolarZenithAngle(begl:endl))
     if (.not. allocated(this%coupling%SoilType))            allocate(this%coupling%SoilType(begl:endl))
     if (.not. allocated(this%coupling%VegType))             allocate(this%coupling%VegType(begl:endl))
     if (.not. allocated(this%coupling%RunoffSlopeType))     allocate(this%coupling%RunoffSlopeType(begl:endl))
+    if (.not. allocated(this%coupling%VegFracAnnMax))       allocate(this%coupling%VegFracAnnMax(begl:endl))
+    if (.not. allocated(this%coupling%SoilMoisture))        allocate(this%coupling%SoilMoisture(begl:endl,nsoil))
+    if (.not. allocated(this%coupling%TemperatureSoilSnow)) allocate(this%coupling%TemperatureSoilSnow(begl:endl,-nsnow+1:nsoil))
+    if (.not. allocated(this%coupling%SnowDepth))           allocate(this%coupling%SnowDepth(begl:endl))
+    if (.not. allocated(this%coupling%SnowWaterEquiv))      allocate(this%coupling%SnowWaterEquiv(begl:endl))
 
     ! init
-    this%coupling%CosSolarZenithAngle(:) = undefined_real
-    this%coupling%SoilType(:)            = undefined_int
-    this%coupling%VegType(:)             = undefined_int
-    this%coupling%RunoffSlopeType(:)     = undefined_int
+    this%coupling%CosSolarZenithAngle(:)   = undefined_real
+    this%coupling%SoilType(:)              = undefined_int
+    this%coupling%VegType(:)               = undefined_int
+    this%coupling%RunoffSlopeType(:)       = undefined_int
+    this%coupling%VegFracAnnMax(:)         = undefined_real
+    this%coupling%SoilMoisture(:,:)        = undefined_real
+    this%coupling%TemperatureSoilSnow(:,:) = undefined_real
+    this%coupling%SnowDepth(:)             = undefined_real
+    this%coupling%SnowWaterEquiv(:)        = undefined_real
 
   end subroutine AllocateInitCoupling
 

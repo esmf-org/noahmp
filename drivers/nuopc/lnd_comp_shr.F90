@@ -6,7 +6,8 @@ module lnd_comp_shr
   use ESMF,  only : ESMF_MeshGet, ESMF_LogWrite, ESMF_SUCCESS
   use ESMF,  only : ESMF_LOGERR_PASSTHRU, ESMF_TYPEKIND_I4
   use ESMF,  only : ESMF_INDEX_DELOCAL, ESMF_MESHLOC_ELEMENT
-  use ESMF,  only : ESMF_LogFoundError, ESMF_LogFoundNetCDFError, ESMF_LOGMSG_INFO
+  use ESMF,  only : ESMF_LogFoundError, ESMF_LogFoundNetCDFError
+  use ESMF,  only : ESMF_LOGMSG_INFO, ESMF_LOGMSG_ERROR
   use ESMF,  only : ESMF_FieldRead, ESMF_FAILURE
   use NUOPC, only : NUOPC_CompAttributeGet
 
@@ -108,10 +109,25 @@ contains
     call ESMF_LogWrite(subname//' called', ESMF_LOGMSG_INFO)
 
     !----------------------
-    ! Generic options 
+    ! Generic run options 
     !----------------------
 
-    call ReadConfig(gcomp, 'case_name' , model%nmlist%CaseName)
+    call ReadConfig(gcomp, 'case_name' , model%nmlist%CaseName, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'start_type', model%nmlist%RestartType, dval='startup', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    if (trim(model%nmlist%RestartType) == 'startup') then
+       model%nmlist%IsRestart = .false.
+    else if (trim(model%nmlist%RestartType) == 'continue') then
+       model%nmlist%IsRestart = .true.
+    else
+       call ESMF_LogWrite(trim(subname)//": ERROR in start_type. It can be only 'startup' and 'continue'.", ESMF_LOGMSG_ERROR)
+       rc = ESMF_FAILURE
+       return
+    end if
+
     call ReadConfig(gcomp, 'DebugLevel', model%nmlist%debug_level)
 
     !----------------------
@@ -156,13 +172,14 @@ contains
     ! Output options 
     !----------------------
 
-    call ReadConfig(gcomp, 'OutputMode', model%nmlist%OutputMode, dval='all')
+    call ReadConfig(gcomp, 'OutputMode', model%nmlist%OutputMode, dval='all', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     if (trim(model%nmlist%OutputMode) == 'all' .or. &
         trim(model%nmlist%OutputMode) == 'mid' .or. &
         trim(model%nmlist%OutputMode) == 'low') then
     else
-       call ESMF_LogWrite(trim(subname)//": ERROR in OutputMode. It can be only 'all', 'mid' and 'low'.", ESMF_LOGMSG_INFO)
+       call ESMF_LogWrite(trim(subname)//": ERROR in OutputMode. It can be only 'all', 'mid' and 'low'.", ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return 
     end if
@@ -170,7 +187,7 @@ contains
     call ReadConfig(gcomp, 'OutputFreq', model%nmlist%OutputFreq, dval=3600)
 
     if (model%nmlist%OutputFreq == 0) then
-       call ESMF_LogWrite(trim(subname)//": ERROR in OutputFreq. It can not be set to zero!", ESMF_LOGMSG_INFO)
+       call ESMF_LogWrite(trim(subname)//": ERROR in OutputFreq. It can not be set to zero!", ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return 
     end if
@@ -179,8 +196,11 @@ contains
     ! Domain options
     !----------------------
 
-    call ReadConfig(gcomp, 'InputDir'  , model%nmlist%input_dir, dval='INPUT/')
-    call ReadConfig(gcomp, 'MosaicFile', model%nmlist%mosaic_file)
+    call ReadConfig(gcomp, 'InputDir'  , model%nmlist%input_dir, dval='INPUT/', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'MosaicFile', model%nmlist%mosaic_file, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     ! if mosaic file is provided, check number of tiles
     if (trim(model%nmlist%mosaic_file) /= '') then
@@ -204,14 +224,15 @@ contains
           model%nmlist%isGlobal = .true.
        else
           call ESMF_LogWrite(trim(subname)//': The mosaic_file is defined but number of tiles are less than 6! &
-             Please define scrip_file for regional applications. Exiting ...', ESMF_LOGMSG_INFO)
+             Please define scrip_file for regional applications. Exiting ...', ESMF_LOGMSG_ERROR)
           rc = ESMF_FAILURE
           return
        end if
     end if
 
     ! scrip file
-    call ReadConfig(gcomp, 'ScripFile', model%nmlist%scrip_file)
+    call ReadConfig(gcomp, 'ScripFile', model%nmlist%scrip_file, rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     if (trim(model%nmlist%scrip_file) /= '') then
        model%domain%dtype = iScrip
@@ -223,14 +244,14 @@ contains
     ! extra check for configuration
     if (trim(model%nmlist%mosaic_file) == '' .and. trim(model%nmlist%scrip_file) == '') then
        call ESMF_LogWrite(trim(subname)//': Both mosaic_file and scrip_file options are empty. &
-          Please define one of them to create land domain. Exiting ...', ESMF_LOGMSG_INFO)
+          Please define one of them to create land domain. Exiting ...', ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return
     end if
 
     if (trim(model%nmlist%mosaic_file) /= '' .and. trim(model%nmlist%scrip_file) /= '') then
        call ESMF_LogWrite(trim(subname)//': Both mosaic_file and scrip_file are defined. &
-          Please define only one of them to create land domain. Exiting ... ', ESMF_LOGMSG_INFO)
+          Please define only one of them to create land domain. Exiting ... ', ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return
     end if
@@ -242,18 +263,33 @@ contains
     ! Input
     !----------------------
 
-    call ReadConfig(gcomp, 'InputType', model%nmlist%InputType, dval='sfc')
+    call ReadConfig(gcomp, 'InputType', model%nmlist%InputType, dval='sfc', rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     if (trim(model%nmlist%InputType) /= 'sfc' .and. &
         trim(model%nmlist%InputType) /= 'custom') then
-       call ESMF_LogWrite(trim(subname)//": ERROR in InputType. It can be only 'sfc' and 'custom'.", ESMF_LOGMSG_INFO)
+       call ESMF_LogWrite(trim(subname)//": ERROR in InputType. It can be only 'sfc' and 'custom'.", ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return
     end if
 
-    call ReadConfig(gcomp, 'InputSoilType' , model%nmlist%InputSoilType)
-    call ReadConfig(gcomp, 'InputVegType'  , model%nmlist%InputVegType)
-    call ReadConfig(gcomp, 'InputSlopeType', model%nmlist%InputSlopeType)
+    call ReadConfig(gcomp, 'InputIC', model%nmlist%InputIC, required=.true., rc=rc) 
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'InputSoilType', model%nmlist%InputSoilType, required=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'InputVegType', model%nmlist%InputVegType, required=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'InputSlopeType', model%nmlist%InputSlopeType, required=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'InputBottomTemp', model%nmlist%InputBottomTemp, required=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
+    call ReadConfig(gcomp, 'InputVegFracAnnMax', model%nmlist%InputVegFracAnnMax, required=.true., rc=rc)
+    if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
     !----------------------
     ! Model configuration
@@ -285,7 +321,7 @@ contains
     call ReadConfig(gcomp, 'OptGlacierTreatment'       , model%noahmp%config%nmlist%OptGlacierTreatment)
 
     if (model%noahmp%config%nmlist%OptSoilProperty /= 1) then
-       call ESMF_LogWrite(trim(subname)//': ERROR in OptSoilProperty. It can be set only to 1 at this point. Exiting ... ', ESMF_LOGMSG_INFO)
+       call ESMF_LogWrite(trim(subname)//': ERROR in OptSoilProperty. It can be set only to 1 at this point. Exiting ... ', ESMF_LOGMSG_ERROR)
        rc = ESMF_FAILURE
        return
     end if
@@ -473,7 +509,7 @@ contains
 
   !=============================================================================
 
-  subroutine ReadConfigCharScalar(gcomp, cname, val, dval)
+  subroutine ReadConfigCharScalar(gcomp, cname, val, dval, required, rc)
 
     ! ----------------------------------------------
     ! Reads namelist option (scalar, char) 
@@ -486,25 +522,39 @@ contains
     character(len=*)          , intent(in)    :: cname
     character(len=*)          , intent(inout) :: val
     character(len=*), optional, intent(in)    :: dval
+    logical         , optional, intent(in)    :: required
+    integer         ,           intent(out)   :: rc
 
     ! local variables
-    integer           :: rc
     character(len=cl) :: cvalue
-    logical           :: isPresent, isSet
+    logical           :: isPresent, isSet, noDefault
     character(len=*),parameter :: subname=trim(modName)//':(ReadConfigCharScalar) '
     ! ----------------------------------------------
 
+    rc = ESMF_SUCCESS
+
+    noDefault = .false.
+    if (present(required)) noDefault = .true.
+
     call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
+
     if (isPresent .and. isSet) then
        val = trim(cvalue)
     else
        if (present(dval)) then
           val = trim(dval)
        else
-          val = '' 
+          if (noDefault) then
+             call ESMF_LogWrite(trim(subname)//": "//trim(cname)//" needs to be provided!", ESMF_LOGMSG_ERROR)
+             rc = ESMF_FAILURE
+             return
+          else
+             val = ''
+          end if 
        end if
     end if
+
     call ESMF_LogWrite(trim(subname)//': '//trim(cname)//' = '//trim(val), ESMF_LOGMSG_INFO)
 
   end subroutine ReadConfigCharScalar
