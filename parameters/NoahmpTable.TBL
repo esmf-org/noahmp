@@ -511,7 +511,7 @@
  AVCMXI     =    2.4,    2.4,    2.4,    2.4,    2.4,    ! q10 for VCMZ25; change in maximum rate of carboxylation for every 10-degC temperature change
  VCMX25I    =   60.0,   80.0,   60.0,   60.0,   55.0,    ! maximum rate of carboxylation at 25c (umol CO2/m2/s)
  BPI        =   4.E4,   1.E4,   2.E3,   2.E3,   2.E3,    ! minimum leaf conductance (umol/m2/s)
- MPI        =     4.,     9.,     6.,     9.,     9.,    ! slope of conductance-to-photosynthesis relationship
+ MPII       =     4.,     9.,     6.,     9.,     9.,    ! slope of conductance-to-photosynthesis relationship
  FOLNMXI    =    1.5,    1.5,    1.5,    1.5,    1.5,    ! foliage nitrogen concentration when f(n)=1 (%)
  QE25I      =   0.05,   0.06,   0.06,   0.06,   0.06,    ! quantum efficiency at 25 degC (umol CO2/umol photon)
  Aref       =    7.0,    7.0,    7.0,    7.0,    7.0,    ! reference maximum CO2 assimilation rate
