@@ -1,15 +1,15 @@
 module lnd_comp_shr
 
   ! Coupling related shared routines
-  use ESMF,  only : ESMF_GridComp, ESMF_FieldGet
-  use ESMF,  only : ESMF_Mesh, ESMF_Field, ESMF_FieldCreate
-  use ESMF,  only : ESMF_MeshGet, ESMF_LogWrite, ESMF_SUCCESS
-  use ESMF,  only : ESMF_LOGERR_PASSTHRU, ESMF_TYPEKIND_I4
-  use ESMF,  only : ESMF_INDEX_DELOCAL, ESMF_MESHLOC_ELEMENT
-  use ESMF,  only : ESMF_LogFoundError, ESMF_LogFoundNetCDFError
-  use ESMF,  only : ESMF_LOGMSG_INFO, ESMF_LOGMSG_ERROR
-  use ESMF,  only : ESMF_FieldRead, ESMF_FAILURE
-  use NUOPC, only : NUOPC_CompAttributeGet
+  use ESMF, only: ESMF_GridComp, ESMF_FieldGet
+  use ESMF, only: ESMF_Mesh, ESMF_Field, ESMF_FieldCreate
+  use ESMF, only: ESMF_MeshGet, ESMF_LogWrite, ESMF_SUCCESS
+  use ESMF, only: ESMF_LOGERR_PASSTHRU, ESMF_TYPEKIND_I4
+  use ESMF, only: ESMF_INDEX_DELOCAL, ESMF_MESHLOC_ELEMENT
+  use ESMF, only: ESMF_LogFoundError, ESMF_LogFoundNetCDFError
+  use ESMF, only: ESMF_LOGMSG_INFO, ESMF_LOGMSG_ERROR
+  use ESMF, only: ESMF_FieldRead, ESMF_FAILURE
+  use NUOPC,only: NUOPC_CompAttributeGet
 
   use lnd_comp_types, only: model_type
   use lnd_comp_types, only: iMosaic, iScrip
@@ -138,7 +138,7 @@ contains
        NumSoilLayer => model%noahmp%config%domain%NumSoilLayer, &
        NumSnowLayerMax => model%noahmp%config%domain%NumSnowLayerMax)
 
-       call ReadConfig(gcomp, 'NumSoilLayer', model%noahmp%config%domain%NumSoilLayer)
+       call ReadConfig(gcomp, 'NumSoilLayer', model%noahmp%config%domain%NumSoilLayer, dval=4)
 
        if (.not. allocated(model%noahmp%config%domain%DepthSoilLayer)) then
           allocate(model%noahmp%config%domain%DepthSoilLayer(1:NumSoilLayer))
@@ -154,7 +154,7 @@ contains
           allocate(model%noahmp%config%domain%SoilType(1:NumSoilLayer))
        end if
 
-       call ReadConfig(gcomp, 'NumSnowLayerMax', model%noahmp%config%domain%NumSnowLayerMax)
+       call ReadConfig(gcomp, 'NumSnowLayerMax', model%noahmp%config%domain%NumSnowLayerMax, dval=3)
 
        if (.not. allocated(model%noahmp%config%domain%ThicknessSnowSoilLayer)) then
           allocate(model%noahmp%config%domain%ThicknessSnowSoilLayer(-NumSnowLayerMax+1:NumSoilLayer))
@@ -316,7 +316,15 @@ contains
     call ReadConfig(gcomp, 'OptIrrigation'             , model%noahmp%config%nmlist%OptIrrigation)
     call ReadConfig(gcomp, 'OptIrrigationMethod'       , model%noahmp%config%nmlist%OptIrrigationMethod)
     call ReadConfig(gcomp, 'OptCropModel'              , model%noahmp%config%nmlist%OptCropModel)
+
     call ReadConfig(gcomp, 'OptSoilProperty'           , model%noahmp%config%nmlist%OptSoilProperty)
+
+    if (model%noahmp%config%nmlist%OptSoilProperty == 2) then
+       call ESMF_LogWrite(trim(subname)//": ERROR in OptSoilProperty. Only option 1 and 3 are supported. Exiting ...", ESMF_LOGMSG_ERROR)
+       rc = ESMF_FAILURE
+       return
+    end if
+
     call ReadConfig(gcomp, 'OptPedotransfer'           , model%noahmp%config%nmlist%OptPedotransfer)
     call ReadConfig(gcomp, 'OptGlacierTreatment'       , model%noahmp%config%nmlist%OptGlacierTreatment)
 
@@ -327,7 +335,16 @@ contains
     end if
 
     ! domain
-    call ReadConfig(gcomp, 'NumSoilLayer'              , model%noahmp%config%domain%NumSoilLayer)
+    call ReadConfig(gcomp, 'SoilTimeStep'   , model%noahmp%config%domain%SoilTimeStep, dval=-999.0_r8)
+    call ReadConfig(gcomp, 'NumSoilLayer'   , model%noahmp%config%domain%NumSoilLayer)
+    call ReadConfig(gcomp, 'FlagSoilProcess', model%noahmp%config%domain%FlagSoilProcess, dval=.false.)
+    call ReadConfig(gcomp, 'LandUseDataName', model%noahmp%config%domain%LandUseDataName, dval='MODIFIED_IGBP_MODIS_NOAH', rc=rc)
+    if (chkerr(rc,__LINE__,u_FILE_u)) return
+
+    !call ReadConfig(gcomp, 'LandUseDataName', model%noahmp%config%domain%LandUseDataName, dval='MODIFIED_IGBP_MODIS_NOAH')
+       !dval='MODIFIED_IGBP_MODIS_NOAH', &
+       !opts=(/'USGS                    ', &
+       !       'MODIFIED_IGBP_MODIS_NOAH'/))
 
     call ESMF_LogWrite(subname//' done', ESMF_LOGMSG_INFO)
 
@@ -367,6 +384,7 @@ contains
           val = undefined_int
        end if
     end if
+    write(cvalue,*) val
     call ESMF_LogWrite(trim(subname)//' '//trim(cname)//' = '//trim(cvalue), ESMF_LOGMSG_INFO)
 
   end subroutine ReadConfigIntScalar
@@ -454,6 +472,7 @@ contains
           val = undefined_real
        end if
     end if
+    write(cvalue,*) val
     call ESMF_LogWrite(trim(subname)//' '//trim(cname)//' = '//trim(cvalue), ESMF_LOGMSG_INFO)
 
   end subroutine ReadConfigRealScalar
@@ -509,6 +528,7 @@ contains
 
   !=============================================================================
 
+  !subroutine ReadConfigCharScalar(gcomp, cname, val, dval, required, opts, rc)
   subroutine ReadConfigCharScalar(gcomp, cname, val, dval, required, rc)
 
     ! ----------------------------------------------
@@ -523,37 +543,69 @@ contains
     character(len=*)          , intent(inout) :: val
     character(len=*), optional, intent(in)    :: dval
     logical         , optional, intent(in)    :: required
+    !character(len=*), allocatable, optional, intent(in)    :: opts(:) 
     integer         ,           intent(out)   :: rc
 
     ! local variables
+    integer           :: i
     character(len=cl) :: cvalue
-    logical           :: isPresent, isSet, noDefault
+    logical           :: isPresent, isSet
+    logical           :: noDefault, validOpt
     character(len=*),parameter :: subname=trim(modName)//':(ReadConfigCharScalar) '
     ! ----------------------------------------------
 
     rc = ESMF_SUCCESS
 
+    ! check the option required or not
     noDefault = .false.
     if (present(required)) noDefault = .true.
 
+    ! get attribute
     call NUOPC_CompAttributeGet(gcomp, name=trim(cname), value=cvalue, isPresent=isPresent, isSet=isSet, rc=rc)
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
 
+    ! check it is given or not
     if (isPresent .and. isSet) then
        val = trim(cvalue)
     else
+       ! option is not provided, set to default if it is given
        if (present(dval)) then
           val = trim(dval)
        else
+          ! throw error if it is required
           if (noDefault) then
              call ESMF_LogWrite(trim(subname)//": "//trim(cname)//" needs to be provided!", ESMF_LOGMSG_ERROR)
              rc = ESMF_FAILURE
              return
           else
+             ! assign to empty string
              val = ''
           end if 
        end if
     end if
+
+    !if (present(opts)) then
+    !   ! check it is valid or not
+    !   validOpt = .false.
+    !   do i = 1, size(opts, dim=1)
+    !      if (trim(val) == trim(opts(i))) then
+    !         validOpt = .true.
+    !         exit
+    !      end if
+    !   end do 
+
+    !   ! throw error if it is not valid option
+    !   if (.not. validOpt) then
+    !      call ESMF_LogWrite(trim(subname)//": Invalid option given for "//trim(cname), ESMF_LOGMSG_ERROR)
+    !      cvalue = ""
+    !      do i = 1, size(opts, dim=1)
+    !         write(cvalue, *) trim(cvalue)//" "//trim(opts(i))
+    !      end do
+    !      call ESMF_LogWrite(trim(subname)//": Valid options are "//trim(cvalue), ESMF_LOGMSG_ERROR)
+    !      rc = ESMF_FAILURE
+    !      return
+    !   end if
+    !end if
 
     call ESMF_LogWrite(trim(subname)//': '//trim(cname)//' = '//trim(val), ESMF_LOGMSG_INFO)
 

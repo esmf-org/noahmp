@@ -135,20 +135,10 @@ contains
     end if
 
     !----------------------
-    ! Set file name for sfc 
-    !----------------------
-
-    if (trim(model%nmlist%InputType) == 'sfc') then
-       if (model%domain%ntiles == 1) then
-          filename = trim(model%nmlist%input_dir)//'sfc_data.nc'
-       else
-          filename = trim(model%nmlist%input_dir)//'sfc_data.tile*.nc'
-       end if
-    end if
-
-    !----------------------
     ! Read soil type
     !----------------------
+
+    write(filename, fmt="(A)") trim(model%nmlist%InputSoilType)
 
     if (trim(model%nmlist%InputType) == 'sfc') then
        allocate(flds(1))
@@ -159,7 +149,6 @@ contains
        model%coupling%SoilType = int(tmpr8)
       deallocate(flds)
     else
-       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSoilType)
        allocate(flds(1))
        flds(1)%short_name = 'soil_type'
        flds(1)%ptr1r4 => tmpr4
@@ -173,6 +162,8 @@ contains
     ! Read vegetation type
     !----------------------
 
+    write(filename, fmt="(A)") trim(model%nmlist%InputVegType)
+
     if (trim(model%nmlist%InputType) == 'sfc') then
        allocate(flds(1))
        flds(1)%short_name = 'vtype'
@@ -182,7 +173,6 @@ contains
        model%coupling%VegType = int(tmpr8)
        deallocate(flds)
     else
-       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputVegType)
        allocate(flds(1))
        flds(1)%short_name = 'vegetation_type'
        flds(1)%ptr1r4 => tmpr4
@@ -196,6 +186,8 @@ contains
     ! Read slope type
     !----------------------
 
+    write(filename, fmt="(A)") trim(model%nmlist%InputSlopeType)
+
     if (trim(model%nmlist%InputType) == 'sfc') then
        allocate(flds(1))
        flds(1)%short_name = 'slope'
@@ -205,7 +197,6 @@ contains
        model%coupling%RunoffSlopeType = int(tmpr8)
        deallocate(flds)
     else
-       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputSlopeType)
        allocate(flds(1))
        flds(1)%short_name = 'slope_type'
        flds(1)%ptr1r4 => tmpr4
@@ -219,6 +210,8 @@ contains
     ! Read deep soil temperature
     !----------------------
 
+    write(filename, fmt="(A)") trim(model%nmlist%InputBottomTemp)
+
     if (trim(model%nmlist%InputType) == 'sfc') then
        allocate(flds(1))
        flds(1)%short_name = 'tg3'
@@ -228,7 +221,6 @@ contains
        model%forcing%TemperatureSoilBottom = tmp2r8(:,1)
        deallocate(flds)
     else
-       write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputBottomTemp)
        allocate(flds(1))
        flds(1)%short_name = 'substrate_temperature'
        flds(1)%ptr1r4 => tmpr4
@@ -264,14 +256,25 @@ contains
     ! Read vegetation greenness, monthly average 
     !----------------------
 
-    write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputVegFracAnnMax)
-    allocate(flds(1))
-    flds(1)%short_name = 'vegetation_greenness'
-    flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
-    call ReadFile(model, filename, flds, rc=rc)
-    if (ChkErr(rc,__LINE__,u_FILE_u)) return
-    model%coupling%VegFracAnnMax(:) = maxval(dble(tmp2r4(:,:)), dim=2)
-    deallocate(flds)
+    write(filename, fmt="(A)") trim(model%nmlist%InputVegFracAnnMax)
+
+    if (trim(model%nmlist%InputType) == 'sfc') then
+       allocate(flds(1))
+       flds(1)%short_name = 'shdmax'
+       flds(1)%ptr1r8 => tmpr8
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%VegFracAnnMax(:) = tmpr8(:)
+       deallocate(flds)
+    else
+       allocate(flds(1))
+       flds(1)%short_name = 'vegetation_greenness'
+       flds(1)%nrec = 12; flds(1)%ptr2r4 => tmp2r4
+       call ReadFile(model, filename, flds, rc=rc)
+       if (ChkErr(rc,__LINE__,u_FILE_u)) return
+       model%coupling%VegFracAnnMax(:) = maxval(dble(tmp2r4(:,:)), dim=2)
+       deallocate(flds)
+    end if
 
     !----------------------
     ! Soil color
@@ -311,7 +314,7 @@ contains
     ! Read information from input file
     !----------------------
 
-    write(filename, fmt="(A)") trim(model%nmlist%input_dir)//trim(model%nmlist%InputIC)
+    write(filename, fmt="(A)") trim(model%nmlist%InputIC)
 
     if (trim(model%nmlist%InputType) == 'sfc') then
 
@@ -1073,7 +1076,6 @@ contains
 
        ! 2d/i4 field (x,y)
        else if (associated(outflds(i)%ptr1i4)) then
-          call ESMF_LogWrite(trim(subname)//' hoho', ESMF_LOGMSG_INFO)
           ! set field type
           call ESMF_ArraySpecSet(arraySpecI4, typekind=ESMF_TYPEKIND_I4, rank=2, rc=rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return
@@ -1625,6 +1627,9 @@ contains
           call FieldAdd('VegFracAnnMax'          , 'annual max vegetation fraction'                           , 'unitless', histflds, ptr1r8=model%coupling%VegFracAnnMax)
           call FieldAdd('SnowWaterEquiv'         , 'snow water equivalent'                                    , 'mm'      , histflds, ptr1r8=model%coupling%SnowWaterEquiv)
           call FieldAdd('SnowDepth'              , 'snow depth'                                               , 'mm'      , histflds, ptr1r8=model%coupling%SnowDepth)
+
+          ! water variables
+
 
           ! other fields
           call FieldAdd('CosSolarZenithAngle'    , 'cosine solar zenith angle'                                , '1'       , histflds, ptr1r8=model%coupling%CosSolarZenithAngle)
